@@ -73,6 +73,9 @@ jobs:
       - name: Build
         run: pnpm tauri build
 
+      - name: List bundle files
+        run: find src-tauri/target/release/bundle -type f || echo "no bundle files"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
