@@ -1,0 +1,47 @@
+# Node
+node_modules/
+dist/
+*.local
+.pnpm-store/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Build output / bundles
+src-tauri/target/release/bundle/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Misc
+*.tmp
+*~
+
+# Rsync deployment
+deploy.sh
+deploy.conf
+deploy.conf.example
