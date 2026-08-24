@@ -59,7 +59,8 @@ const selected = ref<string[]>([]);
 const searchQuery = ref("");
 const searchResults = ref<ObjectEntry[] | null>(null);
 const searching = ref(false);
-const searchExpanded = ref(false);
+const searchExpanded = ref(true);
+const searchDeep = ref(false);
 const searchInputEl = ref<HTMLInputElement | null>(null);
 let searchTimer: number | undefined;
 
@@ -103,7 +104,8 @@ async function runSearch() {
       props.profile.id,
       selectedBucket.value,
       prefix.value,
-      q
+      q,
+      searchDeep.value
     );
     searchResults.value = res.entries;
   } catch (e) {
@@ -334,6 +336,16 @@ async function uploadFiles(paths: string[]) {
   let ok = 0;
   let fail = 0;
   for (const file of paths) {
+    const kind = await api.pathKind(file).catch(() => "file" as const);
+    if (kind === "dir") {
+      try {
+        ok += await uploadFolderFiles(file, false);
+      } catch (e) {
+        fail++;
+        logError("upload", t("logFolderUploadFailed", { name: file, msg: String(e) }));
+      }
+      continue;
+    }
     const name = file.split(/[\\/]/).pop() || "file";
     const key = prefix.value + name;
     const taskId = addTransfer({
@@ -368,6 +380,52 @@ async function uploadFiles(paths: string[]) {
   }
   busy.value = "";
   await loadObjects();
+}
+
+async function uploadFolder() {
+  if (!selectedBucket.value) return;
+  const dir = await open({ directory: true });
+  if (!dir || typeof dir !== "string") return;
+  busy.value = `${t("upload")} ${dir.split(/[\\/]/).filter(Boolean).pop() || "folder"}...`;
+  try {
+    const n = await uploadFolderFiles(dir, true);
+    if (n === 0) pushToast("info", t("uploadFolderEmpty", { name: dir }), 3000);
+  } catch (e) {
+    pushToast("error", t("transferError", { kind: t("uploadKind"), msg: String(e) }));
+  } finally {
+    busy.value = "";
+    await loadObjects();
+  }
+}
+
+async function uploadFolderFiles(dir: string, notify: boolean): Promise<number> {
+  if (!selectedBucket.value) return 0;
+  const bucket = selectedBucket.value;
+  const name = dir.split(/[\\/]/).filter(Boolean).pop() || "folder";
+  const taskId = addTransfer({
+    type: "upload",
+    name,
+    bucket,
+    key: prefix.value,
+    path: dir,
+  });
+  let n = 0;
+  try {
+    n = await api.uploadFolder(props.profile.id, bucket, prefix.value, dir, taskId);
+    patchTransfer(taskId, { status: "done", progress: 100 });
+    logSuccess(
+      "upload",
+      t("logFolderUploaded", { name, bucket, prefix: prefix.value || "/", n })
+    );
+    if (notify) {
+      pushToast("success", t("uploadFolderDone", { name, n }), 4000);
+    }
+    return n;
+  } catch (e) {
+    patchTransfer(taskId, { status: "error", error: String(e) });
+    logError("upload", t("logFolderUploadFailed", { name, msg: String(e) }));
+    throw e;
+  }
 }
 
 function joinDownloadPath(dir: string, key: string): string {
@@ -731,6 +789,15 @@ onBeforeUnmount(() => {
               spellcheck="false"
               @keyup.esc="collapseSearch"
             />
+            <label class="flex shrink-0 cursor-pointer items-center gap-1 pl-1 text-xs text-slate-500 dark:text-slate-400">
+              <input
+                v-model="searchDeep"
+                type="checkbox"
+                class="h-3 w-3"
+                @change="runSearch"
+              />
+              {{ t("deepSearch") }}
+            </label>
             <button class="shrink-0 rounded px-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" @click="collapseSearch">✕</button>
           </template>
         </div>
@@ -772,6 +839,7 @@ onBeforeUnmount(() => {
             <button class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="loadObjects()">{{ t("refresh") }}</button>
             <button class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="showNewFolder = true">{{ t("newFolder") }}</button>
             <button class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" :title="t('uploadBtnHint')" @click="upload">{{ t("upload") }}</button>
+            <button class="rounded-md border border-blue-300 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30" :title="t('uploadFolderBtnHint')" @click="uploadFolder">{{ t("uploadFolder") }}</button>
             <button class="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-500/90 hover:bg-red-50 dark:border-red-900/70 dark:text-red-400/80 dark:hover:bg-red-950/30" @click="deleteBucket">{{ t("deleteBucket") }}</button>
           </div>
         </div>

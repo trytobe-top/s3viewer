@@ -27,7 +27,7 @@ function load(): {
         previewImageLimitMb: num(p.previewImageLimitMb, 8),
         previewPdfLimitMb: num(p.previewPdfLimitMb, 10),
         openDevToolsOnStart: !!p.openDevToolsOnStart,
-        showLogCountBadge: p.showLogCountBadge !== false,
+        showLogCountBadge: p.showLogCountBadge === true,
       };
     }
   } catch {
@@ -41,7 +41,7 @@ function load(): {
     previewImageLimitMb: 8,
     previewPdfLimitMb: 10,
     openDevToolsOnStart: false,
-    showLogCountBadge: true,
+    showLogCountBadge: false,
   };
 }
 

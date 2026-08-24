@@ -8,7 +8,7 @@ use aws_smithy_runtime_api::client::http::SharedHttpClient;
 use aws_smithy_types::body::SdkBody;
 use aws_smithy_types::byte_stream::ByteStream;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -43,6 +43,14 @@ struct ProgressUploadBody {
     done: bool,
     app: AppHandle,
     task_id: String,
+    /// Progress base percentage (already uploaded before this file in a batch).
+    base: f64,
+    /// Percentage range this file contributes to the batch progress.
+    span: f64,
+    /// Total bytes of the whole batch (for progress reporting).
+    total_bytes: u64,
+    /// Bytes uploaded before this file in the batch (for progress reporting).
+    sent_before: u64,
 }
 
 impl http_body::Body for ProgressUploadBody {
@@ -67,11 +75,18 @@ impl http_body::Body for ProgressUploadBody {
                 }
                 self.sent += n as u64;
                 let p = if self.total > 0 {
-                    (self.sent as f64 / self.total as f64 * 100.0).min(100.0)
+                    (self.base + (self.sent as f64 / self.total as f64) * self.span).min(100.0)
                 } else {
-                    0.0
+                    self.base
                 };
-                emit_progress(&self.app, &self.task_id, "upload", p, self.sent, self.total);
+                emit_progress(
+                    &self.app,
+                    &self.task_id,
+                    "upload",
+                    p,
+                    self.sent_before + self.sent,
+                    self.total_bytes,
+                );
                 Poll::Ready(Some(Ok(http_body::Frame::data(bytes::Bytes::copy_from_slice(
                     rbuf.filled(),
                 )))))
@@ -388,15 +403,105 @@ pub async fn search_objects(
     bucket: &str,
     prefix: &str,
     query: &str,
+    deep: bool,
 ) -> Result<ObjectList> {
     use std::collections::HashSet;
 
     let client = build_client(p).await?;
     let q = query.to_lowercase();
+    let limit = 500u32;
+
+    if !deep {
+        // shallow search: only the current folder level
+        let mut entries: Vec<ObjectEntry> = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let mut req = client
+                .list_objects_v2()
+                .bucket(bucket)
+                .prefix(prefix)
+                .delimiter("/");
+            if let Some(t) = &token {
+                req = req.continuation_token(t);
+            }
+            let out = req
+                .send()
+                .await
+                .map_err(|e| anyhow!("搜索对象失败: {e}"))?;
+
+            for cp in out.common_prefixes() {
+                if entries.len() as u32 >= limit {
+                    break;
+                }
+                if let Some(pfx) = cp.prefix() {
+                    if pfx.is_empty() || pfx == prefix {
+                        continue;
+                    }
+                    let base = pfx
+                        .trim_end_matches('/')
+                        .split('/')
+                        .filter(|s| !s.is_empty())
+                        .last()
+                        .unwrap_or(pfx);
+                    if base.to_lowercase().contains(&q) {
+                        entries.push(ObjectEntry {
+                            key: pfx.to_string(),
+                            size: None,
+                            last_modified: None,
+                            is_dir: true,
+                        });
+                    }
+                }
+            }
+            for obj in out.contents() {
+                if entries.len() as u32 >= limit {
+                    break;
+                }
+                if let Some(key) = obj.key() {
+                    if key == prefix {
+                        continue;
+                    }
+                    let base = key
+                        .split('/')
+                        .filter(|s| !s.is_empty())
+                        .last()
+                        .unwrap_or(key);
+                    if base.to_lowercase().contains(&q) {
+                        entries.push(ObjectEntry {
+                            key: key.to_string(),
+                            size: obj.size(),
+                            last_modified: obj.last_modified().map(|d| {
+                                format!(
+                                    "{}",
+                                    d.fmt(aws_smithy_types::date_time::Format::DateTime)
+                                        .unwrap_or_default()
+                                )
+                            }),
+                            is_dir: false,
+                        });
+                    }
+                }
+            }
+            if !out.is_truncated().unwrap_or(false) || entries.len() as u32 >= limit {
+                break;
+            }
+            token = out.next_continuation_token().map(|s| s.to_string());
+            if token.is_none() {
+                break;
+            }
+        }
+        entries.sort_by(|a, b| a.key.cmp(&b.key));
+        return Ok(ObjectList {
+            entries,
+            is_truncated: false,
+            next_token: None,
+        });
+    }
+
+    // deep search: recursively into all subfolders
     let mut token: Option<String> = None;
     let mut entries: Vec<ObjectEntry> = Vec::new();
     let mut folders: HashSet<String> = HashSet::new();
-    let limit = 500u32;
 
     loop {
         let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
@@ -535,6 +640,10 @@ pub async fn upload_file(
         done: false,
         app: app.clone(),
         task_id: task_id.to_string(),
+        base: 0.0,
+        span: 100.0,
+        total_bytes: total,
+        sent_before: 0,
     }));
     client
         .put_object()
@@ -545,6 +654,98 @@ pub async fn upload_file(
         .await
         .map_err(|e| anyhow!("上传失败: {e}"))?;
     Ok(())
+}
+
+fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, out)?;
+        } else if path.is_file() {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+pub async fn upload_folder(
+    app: &AppHandle,
+    p: &Profile,
+    bucket: &str,
+    prefix: &str,
+    local_dir: &str,
+    task_id: &str,
+) -> Result<u64> {
+    let client = build_client(p).await?;
+    let root = Path::new(local_dir);
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_files(root, &mut files)?;
+    if files.is_empty() {
+        return Ok(0);
+    }
+    let total_bytes: u64 = files
+        .iter()
+        .map(|f| std::fs::metadata(f).map(|m| m.len()).unwrap_or(0))
+        .sum();
+    let mut sent_before: u64 = 0;
+    let mut count = 0u64;
+    for path in &files {
+        let meta = std::fs::metadata(path).map_err(|e| anyhow!("读取本地文件失败: {e}"))?;
+        let total = meta.len();
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|_| anyhow!("计算相对路径失败"))?;
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        let key = format!("{prefix}{rel_str}");
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|e| anyhow!("打开本地文件失败: {e}"))?;
+        let base = if total_bytes > 0 {
+            (sent_before as f64 / total_bytes as f64) * 100.0
+        } else {
+            0.0
+        };
+        let span = if total_bytes > 0 {
+            (total as f64 / total_bytes as f64) * 100.0
+        } else {
+            100.0
+        };
+        let body = ByteStream::new(SdkBody::from_body_1_x(ProgressUploadBody {
+            file,
+            total,
+            sent: 0,
+            done: false,
+            app: app.clone(),
+            task_id: task_id.to_string(),
+            base,
+            span,
+            total_bytes,
+            sent_before,
+        }));
+        client
+            .put_object()
+            .bucket(bucket)
+            .key(&key)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| anyhow!("上传失败: {e}"))?;
+        sent_before += total;
+        count += 1;
+    }
+    Ok(count)
+}
+
+pub fn path_kind(path: &str) -> String {
+    let p = Path::new(path);
+    if p.is_dir() {
+        "dir".to_string()
+    } else if p.is_file() {
+        "file".to_string()
+    } else {
+        "missing".to_string()
+    }
 }
 
 pub async fn download_object(

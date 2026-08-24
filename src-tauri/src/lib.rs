@@ -118,9 +118,10 @@ async fn search_objects(
     bucket: String,
     prefix: String,
     query: String,
+    deep: bool,
 ) -> Result<s3::ObjectList, String> {
     let p = get_profile(&state, &profile_id)?;
-    s3::search_objects(&p, &bucket, &prefix, &query)
+    s3::search_objects(&p, &bucket, &prefix, &query, deep)
         .await
         .map_err(|e| e.to_string())
 }
@@ -163,6 +164,27 @@ async fn upload_file(
     s3::upload_file(&app, &p, &bucket, &key, &local_path, &task_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn upload_folder(
+    app: tauri::AppHandle,
+    state: State<'_, ConfigState>,
+    profile_id: String,
+    bucket: String,
+    prefix: String,
+    local_dir: String,
+    task_id: String,
+) -> Result<u64, String> {
+    let p = get_profile(&state, &profile_id)?;
+    s3::upload_folder(&app, &p, &bucket, &prefix, &local_dir, &task_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn path_kind(path: String) -> Result<String, String> {
+    Ok(s3::path_kind(&path))
 }
 
 #[tauri::command]
@@ -362,6 +384,8 @@ pub fn run() {
             search_objects,
             presign,
             upload_file,
+            upload_folder,
+            path_kind,
             download_object,
             download_selected,
             delete_object,

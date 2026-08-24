@@ -35,13 +35,15 @@ export const api = {
     profileId: string,
     bucket: string,
     prefix: string,
-    query: string
+    query: string,
+    deep: boolean
   ) =>
     invoke<ObjectList>("search_objects", {
       profileId,
       bucket,
       prefix,
       query,
+      deep,
     }),
 
   getPreview: (profileId: string, bucket: string, key: string) =>
@@ -69,6 +71,16 @@ export const api = {
     localPath: string,
     taskId: string
   ) => invoke<void>("upload_file", { profileId, bucket, key, localPath, taskId }),
+
+  uploadFolder: (
+    profileId: string,
+    bucket: string,
+    prefix: string,
+    localDir: string,
+    taskId: string
+  ) => invoke<number>("upload_folder", { profileId, bucket, prefix, localDir, taskId }),
+
+  pathKind: (path: string) => invoke<"file" | "dir" | "missing">("path_kind", { path }),
 
   downloadObject: (
     profileId: string,
