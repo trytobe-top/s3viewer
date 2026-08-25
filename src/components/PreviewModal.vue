@@ -42,6 +42,7 @@ const TEXT_EXTS = new Set([
   "scala", "groovy", "gradle", "r", "ipynb", "dart", "ex", "exs", "erl",
   "hs", "clj", "cljs", "vim", "dockerfile", "makefile", "gitignore", "lock",
   "svg", "graphql", "proto", "srt", "vtt", "nfo", "license", "readme", "sass",
+  "nc", "gcode", "tap",
 ]);
 
 const IMAGE_EXTS: Record<string, string> = {
@@ -353,7 +354,8 @@ onMounted(load);
 
         <div v-else-if="blocked" class="flex h-full flex-col items-center justify-center gap-3 text-slate-500 dark:text-slate-400">
           <span class="text-4xl">📦</span>
-          <p class="text-center">{{ blocked }}</p>
+          <p class="max-w-md text-center">{{ blocked }}</p>
+          <p class="max-w-md text-center text-xs text-slate-400 dark:text-slate-500">{{ t("tooLargeHint") }}</p>
           <div class="flex gap-2">
             <button class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700" @click="emit('download')">{{ t("download") }}</button>
             <button class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="emit('close')">{{ t("close") }}</button>

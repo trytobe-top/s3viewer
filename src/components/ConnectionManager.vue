@@ -50,20 +50,20 @@ async function remove(p: Profile) {
           <span class="text-lg font-semibold">{{ t("managerTitle") }}</span>
           <span class="text-sm text-slate-400">{{ t("total", { n: profiles.length }) }}</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <button
-            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+            class="whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
             @click="emit('export')"
-          >📤 {{ t("exportConfig") }}</button>
+          >📤 {{ t("exportShort") }}</button>
           <button
-            class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+            class="whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
             @click="emit('import')"
-          >📥 {{ t("importConfig") }}</button>
+          >📥 {{ t("importShort") }}</button>
           <button
-            class="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            class="whitespace-nowrap rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
             @click="emit('new')"
           >{{ t("addConnection") }}</button>
-          <button class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="emit('close')">{{ t("close") }}</button>
+          <button class="whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="emit('close')">{{ t("close") }}</button>
         </div>
       </div>
 

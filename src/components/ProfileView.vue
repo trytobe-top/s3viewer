@@ -77,6 +77,44 @@ function collapseSearch() {
 
 const displayEntries = computed(() => searchResults.value ?? entries.value);
 
+type SortKey = "name" | "size" | "last_modified";
+const sortKey = ref<SortKey | null>(null);
+const sortAsc = ref(true);
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value === key) {
+    if (sortAsc.value) {
+      sortAsc.value = false;
+    } else {
+      sortKey.value = null;
+      sortAsc.value = true;
+    }
+  } else {
+    sortKey.value = key;
+    sortAsc.value = true;
+  }
+}
+
+const sortedEntries = computed(() => {
+  if (!sortKey.value) return displayEntries.value;
+  const key = sortKey.value;
+  const dir = sortAsc.value ? 1 : -1;
+  return [...displayEntries.value].sort((a, b) => {
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+    let cmp = 0;
+    if (key === "name") {
+      const an = (a.key.split("/").filter(Boolean).pop() || "").toLowerCase();
+      const bn = (b.key.split("/").filter(Boolean).pop() || "").toLowerCase();
+      cmp = an.localeCompare(bn);
+    } else if (key === "size") {
+      cmp = (a.size ?? -1) - (b.size ?? -1);
+    } else {
+      cmp = (a.last_modified ?? "").localeCompare(b.last_modified ?? "");
+    }
+    return cmp * dir;
+  });
+});
+
 const selectedCount = computed(() => selected.value.length);
 const allChecked = computed(
   () =>
@@ -868,9 +906,36 @@ onBeforeUnmount(() => {
               <th class="w-8 px-3 py-2">
                 <input type="checkbox" class="h-3.5 w-3.5" :checked="allChecked" @change="toggleAll" />
               </th>
-              <th class="px-3 py-2 font-medium">{{ t("name") }}</th>
-              <th class="w-32 px-3 py-2 font-medium">{{ t("size") }}</th>
-              <th class="w-44 px-3 py-2 font-medium">{{ t("lastModified") }}</th>
+              <th class="px-3 py-2 font-medium" :class="sortKey === 'name' ? 'bg-white dark:bg-slate-800' : ''">
+                <button
+                  class="flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200"
+                  :class="sortKey === 'name' ? 'text-blue-600 dark:text-blue-400' : ''"
+                  @click="toggleSort('name')"
+                >
+                  {{ t("name") }}
+                  <span v-if="sortKey === 'name'" class="text-[10px]">{{ sortAsc ? "▲" : "▼" }}</span>
+                </button>
+              </th>
+              <th class="w-32 px-3 py-2 font-medium" :class="sortKey === 'size' ? 'bg-white dark:bg-slate-800' : ''">
+                <button
+                  class="flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200"
+                  :class="sortKey === 'size' ? 'text-blue-600 dark:text-blue-400' : ''"
+                  @click="toggleSort('size')"
+                >
+                  {{ t("size") }}
+                  <span v-if="sortKey === 'size'" class="text-[10px]">{{ sortAsc ? "▲" : "▼" }}</span>
+                </button>
+              </th>
+              <th class="w-44 px-3 py-2 font-medium" :class="sortKey === 'last_modified' ? 'bg-white dark:bg-slate-800' : ''">
+                <button
+                  class="flex items-center gap-1 hover:text-slate-700 dark:hover:text-slate-200"
+                  :class="sortKey === 'last_modified' ? 'text-blue-600 dark:text-blue-400' : ''"
+                  @click="toggleSort('last_modified')"
+                >
+                  {{ t("lastModified") }}
+                  <span v-if="sortKey === 'last_modified'" class="text-[10px]">{{ sortAsc ? "▲" : "▼" }}</span>
+                </button>
+              </th>
               <th class="w-44 px-3 py-2 font-medium">{{ t("actions") }}</th>
             </tr>
           </thead>
@@ -881,7 +946,7 @@ onBeforeUnmount(() => {
           </tbody>
           <tbody v-else>
             <tr
-              v-for="e in displayEntries"
+              v-for="e in sortedEntries"
               :key="e.key"
               class="border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/50"
               @contextmenu.prevent="onContextMenu($event, e)"
