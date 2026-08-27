@@ -107,6 +107,7 @@ const en: Dict = {
   tooLargeImage: "Image is large ({size}), over the image preview limit; not loading automatically to avoid lag.",
   tooLargePdf: "PDF is large ({size}), over the PDF preview limit ({limit}); not loading automatically to avoid lag.",
   tooLargeHint: "You can download it below, or raise the limit in Settings → Preview size limit and reopen the preview.",
+  previewAnyway: "Open Anyway",
 
   // share
   shareTitle: "Share / Presigned URL",
@@ -337,6 +338,7 @@ const zh: Dict = {
   tooLargeImage: "图片较大（{size}），超过图片预览限制，为避免卡顿不再自动加载。",
   tooLargePdf: "PDF 较大（{size}），超过 PDF 预览限制（{limit}），为避免卡顿不再自动加载。",
   tooLargeHint: "可在下方下载，或到「设置 → 预览大小限制」调大限制后重新打开预览。",
+  previewAnyway: "仍然预览",
 
   shareTitle: "分享 / 签名 URL",
   object: "对象：",

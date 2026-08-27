@@ -30,6 +30,7 @@ rustls-pki-types = "1"
 hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "tls12"] }
 anyhow = "1"
 base64 = "0.22"
+keyring = "3"
 bytes = "1"
 http-body = "1"
 dirs = "6"

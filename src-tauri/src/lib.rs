@@ -64,6 +64,7 @@ async fn delete_profile(
 ) -> Result<Vec<Profile>, String> {
     let mut guard = state.inner.lock().map_err(|e| e.to_string())?;
     guard.profiles.retain(|p| p.id != id);
+    config::delete_secret(&id);
     let snapshot = guard.profiles.clone();
     save_config(&state, &guard)?;
     Ok(snapshot)
