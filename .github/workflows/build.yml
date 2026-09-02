@@ -44,6 +44,14 @@ jobs:
             src-tauri/target/release/bundle/
           if-no-files-found: error
 
+      - name: Upload plugin artifacts
+        if: matrix.platform == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3viewer-plugins
+          path: plugins/dist/
+          if-no-files-found: error
+
   smoke:
     # push / PR 时仅构建 Linux 作为冒烟测试
     if: ${{ !(github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) }}
