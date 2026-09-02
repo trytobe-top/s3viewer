@@ -1,5 +1,5 @@
 import type { Extension } from "@codemirror/state";
-import { EditorState, StateEffect } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect } from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -176,17 +176,19 @@ function buildBaseTheme(dark: boolean) {
  * 通过异步动态加载，加载完成后用 StateEffect.appendConfig 追加，
  * 避免等待语言模块期间界面一片空白。
  */
+const editCompartments = new WeakMap<EditorView, Compartment>();
+
 export function createReadOnlyEditor(
   host: HTMLElement,
   text: string,
   ext: string,
   dark: boolean
 ): EditorView {
+  const editComp = new Compartment();
   const base: Extension[] = [
     buildBaseTheme(dark),
     EditorView.lineWrapping,
-    EditorView.editable.of(false),
-    EditorState.readOnly.of(true),
+    editComp.of([EditorView.editable.of(false), EditorState.readOnly.of(true)]),
     lineNumbers(),
     foldGutter(),
     drawSelection(),
@@ -202,6 +204,7 @@ export function createReadOnlyEditor(
     state: EditorState.create({ doc: text, extensions: base }),
     parent: host,
   });
+  editCompartments.set(view, editComp);
 
   void (async () => {
     try {
@@ -223,4 +226,20 @@ export function createReadOnlyEditor(
   })();
 
   return view;
+}
+
+export function setCmEditable(view: EditorView, on: boolean) {
+  const comp = editCompartments.get(view);
+  if (comp) {
+    view.dispatch({
+      effects: comp.reconfigure([
+        EditorView.editable.of(on),
+        EditorState.readOnly.of(!on),
+      ]),
+    });
+  }
+}
+
+export function getCmText(view: EditorView): string {
+  return view.state.doc.toString();
 }

@@ -1,6 +1,6 @@
 [package]
 name = "s3viewer"
-version = "0.2.0"
+version = "0.3.0"
 description = "A multi-backend S3 client built with Tauri"
 authors = ["you"]
 edition = "2021"
@@ -31,6 +31,8 @@ hyper-rustls = { version = "0.24", default-features = false, features = ["http1"
 anyhow = "1"
 base64 = "0.22"
 keyring = "3"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 bytes = "1"
 http-body = "1"
 dirs = "6"
@@ -40,6 +42,9 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Securit
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+
+[profile.dev]
+debug = "line-tables-only"
 
 [profile.release]
 opt-level = 2

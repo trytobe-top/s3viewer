@@ -1041,6 +1041,7 @@ onBeforeUnmount(() => {
       :size="previewTarget.size"
       @close="previewTarget = null"
       @download="download(previewTarget!)"
+      @saved="loadObjects()"
     />
 
     <ShareModal

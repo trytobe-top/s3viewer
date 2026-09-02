@@ -8,6 +8,7 @@ import { emitBack, emitForward } from "./navbus";
 import { patchTransfer, runningTransferCount } from "./transfers";
 import { openDevTools } from "./devtools";
 import { settings } from "./settings";
+import { refreshPlugins } from "./plugins";
 import type { Profile } from "./types";
 import ProfileView from "./components/ProfileView.vue";
 import ProfileFormModal from "./components/ProfileFormModal.vue";
@@ -15,12 +16,13 @@ import ConnectionManager from "./components/ConnectionManager.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import TransfersPanel from "./components/TransfersPanel.vue";
 import LogsPanel from "./components/LogsPanel.vue";
+import PluginPanel from "./components/PluginPanel.vue";
 import ConfirmDialog from "./components/ConfirmDialog.vue";
 import ToastHost from "./components/ToastHost.vue";
 import ExportModal from "./components/ExportModal.vue";
 import ImportModal from "./components/ImportModal.vue";
 
-type ToolKind = "transfers" | "logs" | "settings";
+type ToolKind = "transfers" | "logs" | "settings" | "plugins";
 
 type Tab =
   | { kind: "profile"; key: string; profile: Profile; initial?: { bucket: string; prefix: string } }
@@ -150,6 +152,7 @@ async function onDeleted(id: string) {
 
 onMounted(async () => {
   loadProfiles();
+  refreshPlugins();
   window.addEventListener("auxclick", onAuxClick);
   await listen<any>("transfer://progress", (e) => {
     const p = e.payload;
@@ -264,6 +267,12 @@ function onAuxClick(e: MouseEvent) {
         </button>
         <button
           class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+          @click="openToolTab('plugins')"
+        >
+          🧩 {{ t("plugins") }}
+        </button>
+        <button
+          class="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
           @click="openToolTab('settings')"
         >
           ⚙️ {{ t("settings") }}
@@ -283,7 +292,7 @@ function onAuxClick(e: MouseEvent) {
           <span class="truncate">{{ tab.profile.name }}</span>
         </template>
         <template v-else>
-          <span>{{ tab.kind === "transfers" ? "📥" : tab.kind === "logs" ? "📋" : "⚙️" }}</span>
+          <span>{{ tab.kind === "transfers" ? "📥" : tab.kind === "logs" ? "📋" : tab.kind === "plugins" ? "🧩" : "⚙️" }}</span>
           <span class="truncate">{{ t(tab.kind) }}</span>
           <span v-if="tab.kind === 'transfers' && runningCount" class="rounded-full bg-blue-600 px-1.5 text-xs text-white dark:bg-blue-500">{{ runningCount }}</span>
           <span v-else-if="tab.kind === 'logs' && settings.showLogCountBadge && logs.entries.length" class="rounded-full bg-slate-200 px-1.5 text-xs dark:bg-slate-600">{{ logs.entries.length }}</span>
@@ -317,6 +326,7 @@ function onAuxClick(e: MouseEvent) {
           />
           <TransfersPanel v-else-if="tab.kind === 'transfers'" />
           <LogsPanel v-else-if="tab.kind === 'logs'" />
+          <PluginPanel v-else-if="tab.kind === 'plugins'" />
           <SettingsPanel v-else />
         </div>
       </template>

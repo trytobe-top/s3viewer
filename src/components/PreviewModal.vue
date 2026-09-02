@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { ref, shallowRef, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import * as pdfjs from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 import { api } from "../api";
 import { formatSize, fileIcon } from "../utils";
 import { t } from "../i18n";
 import { settings } from "../settings";
+import { pushToast } from "../toast";
+import { findRenderer, getPluginBaseUrl } from "../plugins";
+import type { PluginHandle, PluginRenderer } from "../plugins";
 import type { EditorView } from "@codemirror/view";
 import type { Profile, Preview } from "../types";
 
-// pdf.js 官方推荐的 Vite 用法：让 pdf.js 自己从 workerSrc 创建 worker。
-// 避免 ?raw + Blob + workerPort 方案在不同构建/缓存下产生多个 pdfjs-dist 实例
-// （多实例会导致 "Cannot read private member #pagesNumber" 错误）。
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+// 用 Vite 的 ?worker 直接创建真实 Worker，避免 dev 下 ?url 指向 node_modules
+// 原始路径 + pdf.js "fake worker" 动态 import 失败的坑；也让 dev/prod 一致。
+pdfjs.GlobalWorkerOptions.workerPort = new PdfWorker();
 
 const props = defineProps<{
   profile: Profile;
@@ -21,7 +23,7 @@ const props = defineProps<{
   size: number | null;
 }>();
 
-const emit = defineEmits<{ close: []; download: [] }>();
+const emit = defineEmits<{ close: []; download: []; saved: [] }>();
 
 const textLimit = computed(() =>
   Math.max(0.1, settings.previewTextLimitMb) * 1024 * 1024
@@ -81,10 +83,35 @@ const copied = ref(false);
 const cmHost = ref<HTMLDivElement | null>(null);
 const cmError = ref(false);
 let cmView: EditorView | null = null;
+const pluginRenderer = ref<PluginRenderer | null>(null);
+const pluginHost = ref<HTMLDivElement | null>(null);
+let pluginHandle: PluginHandle | null = null;
+const editing = ref(false);
+const saving = ref(false);
+const canEdit = ref(false);
 
 function destroyCm() {
   cmView?.destroy();
   cmView = null;
+}
+
+function destroyPlugin() {
+  pluginRenderer.value = null;
+  if (pluginHandle) {
+    try {
+      pluginHandle.dispose();
+    } catch (e) {
+      console.error("plugin dispose failed", e);
+    }
+    pluginHandle = null;
+  }
+}
+
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
 }
 
 async function mountCm() {
@@ -106,6 +133,7 @@ async function mountCm() {
       extension.value,
       settings.theme === "dark"
     );
+    canEdit.value = true;
     // 容器在挂载瞬间高度可能为 0（布局未稳定），循环强制重新测量
     let tries = 0;
     const ensureLayout = () => {
@@ -145,6 +173,70 @@ async function copyText() {
     setTimeout(() => (copied.value = false), 1500);
   } catch (e) {
     error.value = String(e);
+  }
+}
+
+async function applyEditable(on: boolean) {
+  if (pluginHandle?.setEditable) {
+    try {
+      pluginHandle.setEditable(on);
+    } catch (e) {
+      console.error("plugin setEditable failed", e);
+    }
+  }
+  if (cmView) {
+    const { setCmEditable } = await import("../cm");
+    setCmEditable(cmView, on);
+  }
+}
+
+function toggleEdit() {
+  const on = !editing.value;
+  editing.value = on;
+  applyEditable(on);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+async function save() {
+  if (!preview.value || saving.value) return;
+  let bytes: Uint8Array;
+  try {
+    if (pluginHandle?.getContent) {
+      const b = await pluginHandle.getContent();
+      bytes = b instanceof Uint8Array ? b : new Uint8Array(b);
+    } else if (cmView) {
+      const { getCmText } = await import("../cm");
+      bytes = new TextEncoder().encode(getCmText(cmView));
+    } else {
+      return;
+    }
+  } catch (e) {
+    error.value = String(e);
+    return;
+  }
+  saving.value = true;
+  try {
+    await api.saveObject(
+      props.profile.id,
+      props.bucket,
+      props.keyName,
+      bytesToBase64(bytes),
+      preview.value.content_type
+    );
+    pushToast("success", t("saveDone"));
+    emit("saved");
+    editing.value = false;
+    applyEditable(false);
+  } catch (e) {
+    error.value = String(e);
+    pushToast("error", t("saveFailed", { msg: String(e) }));
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -280,6 +372,7 @@ function fitWidth() {
 
 onBeforeUnmount(() => {
   destroyCm();
+  destroyPlugin();
   pdfLoadTask.value?.destroy();
   if (renderTask) renderTask.cancel();
 });
@@ -305,10 +398,66 @@ const textContent = computed(() => {
 
 async function load(force = false) {
   destroyCm();
+  destroyPlugin();
   cmError.value = false;
   loading.value = true;
   error.value = "";
   blocked.value = "";
+  editing.value = false;
+  saving.value = false;
+  canEdit.value = false;
+
+  const fileName = props.keyName.split("/").pop() || props.keyName;
+  const previewInfo = {
+    ext: extension.value,
+    name: fileName,
+    contentType: null as string | null,
+    size: props.size,
+  };
+
+  if (!isPdfByExt.value && !isImageByExt.value) {
+    let renderer: PluginRenderer | null = null;
+    try {
+      renderer = await findRenderer(previewInfo);
+    } catch (e) {
+      console.error("findRenderer failed", e);
+    }
+    if (renderer) {
+      try {
+        preview.value = await api.getPreview(
+          props.profile.id,
+          props.bucket,
+          props.keyName
+        );
+        pluginRenderer.value = renderer;
+        loading.value = false;
+        await nextTick();
+        const hostEl = pluginHost.value;
+        if (!hostEl) throw new Error("plugin host missing");
+        const b64 = preview.value.content_base64;
+        pluginHandle =
+          renderer.render(hostEl, {
+            baseUrl: getPluginBaseUrl(renderer.id),
+            ext: extension.value,
+            name: fileName,
+            contentType: preview.value.content_type,
+            size: props.size,
+            dark: settings.theme === "dark",
+            editable: false,
+            fetchObject: () => Promise.resolve(base64ToArrayBuffer(b64)),
+            fetchText: () => Promise.resolve(textContent.value),
+          }) ?? null;
+        canEdit.value = !!pluginHandle?.setEditable;
+      } catch (e) {
+        pluginRenderer.value = null;
+        pluginHandle = null;
+        error.value = String(e);
+      } finally {
+        loading.value = false;
+      }
+      return;
+    }
+  }
 
   if (!force) {
     const kindLimit = isPdfByExt.value
@@ -410,6 +559,25 @@ onMounted(load);
             class="rounded-md bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
             @click="emit('download')"
           >{{ t("download") }}</button>
+          <template v-if="preview && canEdit">
+            <button
+              v-if="!editing"
+              class="rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-sm text-amber-700 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/60"
+              @click="toggleEdit"
+            >✏️ {{ t("edit") }}</button>
+            <button
+              v-else
+              class="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"
+              :disabled="saving"
+              @click="toggleEdit"
+            >{{ t("cancel") }}</button>
+            <button
+              v-if="editing"
+              class="rounded-md bg-green-600 px-3 py-1 text-sm text-white hover:bg-green-700 disabled:opacity-50"
+              :disabled="saving"
+              @click="save"
+            >{{ saving ? t("saving") : t("save") }}</button>
+          </template>
           <button class="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="emit('close')">{{ t("close") }}</button>
         </div>
       </div>
@@ -444,6 +612,11 @@ onMounted(load);
           <div v-if="isImage" class="flex h-full items-center justify-center">
             <img :src="dataUrl" class="max-h-full max-w-full object-contain" :alt="keyName" />
           </div>
+          <div
+            v-else-if="pluginRenderer"
+            ref="pluginHost"
+            class="relative h-full min-h-[240px] overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
+          ></div>
           <div v-else-if="isText" class="h-full min-h-[240px]">
             <div
               v-if="!cmError"

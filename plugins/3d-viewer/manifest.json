@@ -1,0 +1,10 @@
+{
+  "id": "3d-viewer",
+  "name": "3D Viewer",
+  "version": "0.1.0",
+  "description": "STL / STEP 3D model preview (three.js + occt-import-js): left-drag rotate / wheel zoom / middle-drag pan.",
+  "description_zh": "STL / STEP 三维模型预览（three.js + occt-import-js），左键旋转 / 滚轮缩放 / 中键平移。",
+  "entry": "entry.js",
+  "module": true,
+  "homepage": "https://github.com/mrdoob/three.js"
+}

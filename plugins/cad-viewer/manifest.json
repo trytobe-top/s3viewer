@@ -1,0 +1,10 @@
+{
+  "id": "cad-viewer",
+  "name": "CAD Viewer",
+  "version": "1.6.3",
+  "description": "DXF drawing preview (cad-simple-viewer core, wheel zoom / middle-drag pan). DWG needs LibreDWG converter, STL/STP are 3D formats - not supported in v1.",
+  "description_zh": "DXF 图纸预览（cad-simple-viewer 内核，滚轮缩放 / 中键平移）。DWG 需 LibreDWG 转换器、STL/STP 为 3D 格式，v1 暂不支持。",
+  "entry": "entry.js",
+  "module": true,
+  "homepage": "https://github.com/mlightcad/cad-viewer"
+}

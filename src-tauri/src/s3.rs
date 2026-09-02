@@ -589,14 +589,31 @@ pub async fn get_object_preview(
     Ok((bytes.to_vec(), ct))
 }
 
+pub async fn put_object(
+    p: &Profile,
+    bucket: &str,
+    key: &str,
+    bytes: Vec<u8>,
+    content_type: Option<&str>,
+) -> Result<()> {
+    let client = build_client(p).await?;
+    let mut req = client.put_object().bucket(bucket).key(key).body(bytes.into());
+    if let Some(ct) = content_type {
+        req = req.content_type(ct);
+    }
+    req.send()
+        .await
+        .map_err(|e| anyhow!("保存对象失败: {e}"))?;
+    Ok(())
+}
+
 pub async fn presign_url(
     p: &Profile,
     bucket: &str,
     key: &str,
     expires_secs: u64,
     method: &str,
-) -> Result<String> {
-    let client = build_client(p).await?;
+) -> Result<String> {    let client = build_client(p).await?;
     let cfg = PresigningConfig::expires_in(Duration::from_secs(expires_secs))?;
     let uri = match method {
         "PUT" => {

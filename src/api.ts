@@ -6,6 +6,8 @@ import type {
   Preview,
   PresignResult,
   DownloadItem,
+  PluginInfo,
+  RemotePlugin,
 } from "./types";
 
 export const api = {
@@ -128,4 +130,29 @@ export const api = {
     invoke<Profile[]>("import_profiles", { profiles }),
 
   openPath: (path: string) => invoke<void>("open_path", { path }),
+
+  listPlugins: () => invoke<PluginInfo[]>("list_plugins"),
+  installPlugin: (src: string) => invoke<PluginInfo>("install_plugin", { src }),
+  uninstallPlugin: (id: string) => invoke<void>("uninstall_plugin", { id }),
+  pluginUrl: (id: string, path: string) =>
+    invoke<string>("plugin_url", { id, path }),
+  pluginDir: () => invoke<string>("plugin_dir"),
+
+  listRemotePlugins: () => invoke<RemotePlugin[]>("list_remote_plugins"),
+  downloadPlugin: (url: string) => invoke<PluginInfo>("download_plugin", { url }),
+
+  saveObject: (
+    profileId: string,
+    bucket: string,
+    key: string,
+    contentBase64: string,
+    contentType: string | null
+  ) =>
+    invoke<void>("save_object", {
+      profileId,
+      bucket,
+      key,
+      contentBase64,
+      contentType,
+    }),
 };

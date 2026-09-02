@@ -1,4 +1,5 @@
 mod config;
+mod plugins;
 mod s3;
 
 use base64::Engine;
@@ -6,6 +7,8 @@ use config::{Config, ConfigState, Profile};
 use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Manager, State};
+
+use plugins::{InstalledPlugin, PluginState, RemotePlugin};
 
 #[derive(Debug, Serialize)]
 struct Preview {
@@ -219,6 +222,24 @@ async fn download_selected(
 }
 
 #[tauri::command]
+async fn save_object(
+    state: State<'_, ConfigState>,
+    profile_id: String,
+    bucket: String,
+    key: String,
+    content_base64: String,
+    content_type: Option<String>,
+) -> Result<(), String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&content_base64)
+        .map_err(|e| format!("base64 decode: {e}"))?;
+    let p = get_profile(&state, &profile_id)?;
+    s3::put_object(&p, &bucket, &key, bytes, content_type.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn delete_object(
     state: State<'_, ConfigState>,
     profile_id: String,
@@ -337,6 +358,33 @@ fn open_path(path: String) -> Result<(), String> {
     res
 }
 
+/// Open a URL in the OS default browser.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err(format!("无效的 URL: {url}"));
+    }
+    #[cfg(target_os = "windows")]
+    let res = std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开失败: {e}"));
+    #[cfg(target_os = "macos")]
+    let res = std::process::Command::new("open")
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开失败: {e}"));
+    #[cfg(target_os = "linux")]
+    let res = std::process::Command::new("xdg-open")
+        .arg(&url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开失败: {e}"));
+    res
+}
+
 #[tauri::command]
 async fn open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
     window.open_devtools();
@@ -361,18 +409,72 @@ async fn import_profiles(
     Ok(snapshot)
 }
 
+#[tauri::command]
+async fn list_plugins(state: State<'_, PluginState>) -> Result<Vec<InstalledPlugin>, String> {
+    Ok(plugins::list_installed(&state.root))
+}
+
+#[tauri::command]
+async fn install_plugin(
+    state: State<'_, PluginState>,
+    src: String,
+) -> Result<InstalledPlugin, String> {
+    plugins::install(&state.root, &src).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn uninstall_plugin(state: State<'_, PluginState>, id: String) -> Result<(), String> {
+    plugins::uninstall(&state.root, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn plugin_url(id: String, path: String) -> Result<String, String> {
+    if !plugins::valid_plugin_id(&id) {
+        return Err(format!("invalid plugin id: {id}"));
+    }
+    let encoded = plugins::encode_plugin_path(&path);
+    let base = plugins::plugin_base_url();
+    let url = format!("{base}/{id}/{encoded}");
+    Ok(url.trim_end_matches('/').to_string())
+}
+
+#[tauri::command]
+fn plugin_dir(state: State<PluginState>) -> Result<String, String> {
+    Ok(state.root.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn list_remote_plugins() -> Result<Vec<RemotePlugin>, String> {
+    plugins::list_remote(plugins::plugin_registry_url()).await
+}
+
+#[tauri::command]
+async fn download_plugin(
+    state: State<'_, PluginState>,
+    url: String,
+) -> Result<InstalledPlugin, String> {
+    plugins::download_and_install(&state.root, &url).await
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .register_uri_scheme_protocol(plugins::PLUGIN_SCHEME, |ctx, request| {
+            let state = ctx.app_handle().state::<PluginState>();
+            plugins::handle_request(&state.root, request.uri().path(), request.method().as_str())
+        })
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             std::fs::create_dir_all(&dir)?;
+            let plugins_root = dir.join("plugins");
+            std::fs::create_dir_all(&plugins_root)?;
             let path = dir.join("profiles.enc");
             let cfg = Config::load(&path).map_err(|e| format!("load config: {e}"))?;
             app.manage(ConfigState {
                 inner: Mutex::new(cfg),
                 path,
             });
+            app.manage(PluginState { root: plugins_root });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -400,6 +502,15 @@ pub fn run() {
             import_profiles,
             open_devtools,
             open_path,
+            open_url,
+            list_plugins,
+            install_plugin,
+            uninstall_plugin,
+            plugin_url,
+            plugin_dir,
+            save_object,
+            list_remote_plugins,
+            download_plugin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

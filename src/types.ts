@@ -44,3 +44,23 @@ export interface DownloadItem {
   key: string;
   is_dir: boolean;
 }
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  description_zh: string;
+  entry: string;
+  module: boolean;
+  homepage: string | null;
+  dir: string;
+}
+
+export interface RemotePlugin {
+  id: string;
+  version: string;
+  size: number;
+  url: string;
+  tag: string;
+}

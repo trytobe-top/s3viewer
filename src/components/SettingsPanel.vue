@@ -1,8 +1,16 @@
 <script setup lang="ts">
+import { onMounted } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { settings, saveSettings, applyTheme } from "../settings";
 import { t, changeLocale } from "../i18n";
 import { openDevTools } from "../devtools";
+import { updateState, checkForUpdates, downloadUpdate } from "../update";
+
+onMounted(() => {
+  if (!updateState.checked && !updateState.checking) {
+    checkForUpdates();
+  }
+});
 
 function setLanguage(locale: "en" | "zh") {
   changeLocale(locale);
@@ -131,6 +139,45 @@ function clearDir() {
               <input v-model="settings.openDevToolsOnStart" type="checkbox" class="h-4 w-4" @change="saveSettings" />
               <span class="text-slate-600 dark:text-slate-300">{{ t("devToolsOnStart") }}</span>
             </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Update -->
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <span class="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 text-sm dark:bg-blue-900/40">🔄</span>
+          {{ t("updateTitle") }}
+        </h3>
+        <div class="space-y-3">
+          <div class="text-sm text-slate-600 dark:text-slate-300">
+            {{ t("updateCurrentVersion", { version: updateState.current || "-" }) }}
+          </div>
+          <div v-if="updateState.checking" class="text-sm text-slate-500 dark:text-slate-400">
+            {{ t("updateChecking") }}
+          </div>
+          <div v-else-if="updateState.hasUpdate" class="flex flex-wrap items-center gap-3">
+            <span class="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {{ t("updateAvailable", { version: updateState.latest }) }}
+            </span>
+            <button
+              class="rounded-md bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700"
+              @click="downloadUpdate"
+            >⬇️ {{ t("updateDownload") }}</button>
+          </div>
+          <div v-else-if="updateState.checked" class="flex flex-wrap items-center gap-3">
+            <span class="text-sm text-slate-500 dark:text-slate-400">✅ {{ t("updateUpToDate") }}</span>
+            <button
+              class="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
+              @click="checkForUpdates"
+            >{{ t("updateRetry") }}</button>
+          </div>
+          <div v-else-if="updateState.error" class="flex flex-wrap items-center gap-3">
+            <span class="text-sm text-slate-500 dark:text-slate-400">{{ t("updateCheckFailed") }}</span>
+            <button
+              class="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
+              @click="checkForUpdates"
+            >{{ t("updateRetry") }}</button>
           </div>
         </div>
       </section>

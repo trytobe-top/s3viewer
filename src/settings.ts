@@ -14,6 +14,7 @@ function load(): {
   previewPdfLimitMb: number;
   openDevToolsOnStart: boolean;
   showLogCountBadge: boolean;
+  enabledPlugins: string[];
 } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -28,6 +29,7 @@ function load(): {
         previewPdfLimitMb: num(p.previewPdfLimitMb, 10),
         openDevToolsOnStart: !!p.openDevToolsOnStart,
         showLogCountBadge: p.showLogCountBadge === true,
+        enabledPlugins: strArray(p.enabledPlugins),
       };
     }
   } catch {
@@ -42,11 +44,16 @@ function load(): {
     previewPdfLimitMb: 10,
     openDevToolsOnStart: false,
     showLogCountBadge: false,
+    enabledPlugins: [],
   };
 }
 
 function num(v: unknown, d: number): number {
   return typeof v === "number" && isFinite(v) && v > 0 ? v : d;
+}
+
+function strArray(v: unknown): string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === "string") ? v : [];
 }
 
 export const settings = reactive<{
@@ -58,6 +65,7 @@ export const settings = reactive<{
   previewPdfLimitMb: number;
   openDevToolsOnStart: boolean;
   showLogCountBadge: boolean;
+  enabledPlugins: string[];
 }>(load());
 
 export function applyTheme(theme: Theme) {
@@ -77,6 +85,7 @@ export function saveSettings() {
         previewPdfLimitMb: settings.previewPdfLimitMb,
         openDevToolsOnStart: settings.openDevToolsOnStart,
         showLogCountBadge: settings.showLogCountBadge,
+        enabledPlugins: settings.enabledPlugins,
       })
     );
   } catch {

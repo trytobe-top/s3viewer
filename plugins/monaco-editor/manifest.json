@@ -1,0 +1,9 @@
+{
+  "id": "monaco-editor",
+  "name": "Monaco Editor",
+  "version": "0.56.0",
+  "description": "Text/code preview powered by Monaco (the VS Code editor): multi-language syntax highlighting, line numbers, code folding, Ctrl+F search.",
+  "description_zh": "Monaco（VS Code 同款编辑器）驱动的文本/代码预览：多语言语法高亮、行号、代码折叠、Ctrl+F 搜索。",
+  "entry": "entry.js",
+  "homepage": "https://github.com/microsoft/monaco-editor"
+}
