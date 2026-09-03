@@ -67,6 +67,7 @@ pub fn plugin_registry_url() -> &'static str {
 
 fn parse_plugin_asset(name: &str) -> Option<(String, String)> {
     let stem = name.strip_suffix(".zip")?;
+    let stem = stem.strip_prefix("plugin-").unwrap_or(stem);
     let idx = stem.rfind('-')?;
     let id = &stem[..idx];
     let version = &stem[idx + 1..];

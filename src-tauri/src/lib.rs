@@ -459,6 +459,7 @@ async fn download_plugin(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .register_uri_scheme_protocol(plugins::PLUGIN_SCHEME, |ctx, request| {
             let state = ctx.app_handle().state::<PluginState>();
             plugins::handle_request(&state.root, request.uri().path(), request.method().as_str())

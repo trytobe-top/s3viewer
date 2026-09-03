@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../api";
 import { t } from "../i18n";
 import { pushToast } from "../toast";
@@ -67,7 +68,7 @@ async function fromFile() {
 
 async function fromClipboard() {
   try {
-    const text = await navigator.clipboard.readText();
+    const text = await readText();
     applyParsed(parseImport(text));
   } catch (e) {
     error.value = String(e);

@@ -1,7 +1,7 @@
 {
   "id": "office-viewer",
   "name": "Office Viewer",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "Word / Excel / PowerPoint / CSV preview (docx-preview + SheetJS + pptx-renderer). Supports .docx / .xlsx / .xls / .pptx / .csv.",
   "description_zh": "Word / Excel / PPT / CSV 文档预览（docx-preview + SheetJS + pptx-renderer），支持 .docx / .xlsx / .xls / .pptx / .csv。",
   "entry": "entry.js",

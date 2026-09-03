@@ -3,6 +3,7 @@ import { ref, shallowRef, computed, onMounted, onBeforeUnmount, nextTick } from 
 import * as pdfjs from "pdfjs-dist";
 import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 import { api } from "../api";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { formatSize, fileIcon } from "../utils";
 import { t } from "../i18n";
 import { settings } from "../settings";
@@ -168,7 +169,7 @@ async function mountCm() {
 async function copyText() {
   if (!preview.value) return;
   try {
-    await navigator.clipboard.writeText(textContent.value);
+    await writeText(textContent.value);
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
   } catch (e) {

@@ -102,7 +102,7 @@ function zipPlugin(id) {
   const zip = new AdmZip();
   addDir(zip, dir, id);
   mkdirSync(distDir, { recursive: true });
-  const out = join(distDir, `${id}-${manifest.version}.zip`);
+  const out = join(distDir, `plugin-${id}-${manifest.version}.zip`);
   zip.writeZip(out);
   console.log(`[${id}] zip -> ${out}`);
 }

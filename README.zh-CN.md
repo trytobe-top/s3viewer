@@ -87,6 +87,14 @@ pnpm tauri build
 
 安装包生成于 `src-tauri/target/release/bundle/` 目录下。
 
+## 插件
+
+第一方预览插件位于 `plugins/` 目录，每个插件是一个包含 `manifest.json` 和打包后 `entry.js` 的文件夹。
+
+- **构建** — `node plugins/build.mjs` 打包各插件并生成 `plugins/dist/plugin-<id>-<version>.zip`
+- **版本约定** — 插件版本跟随应用版本。每次发版时把各插件 `manifest.json` 的版本号统一改为当前应用版本；有改动的插件在发版时带上该版本号，用户即可看到「更新」提示
+- **发布** — 把生成的 `plugins/dist/plugin-*.zip` 上传到 GitHub Release，插件页「可用插件」区即可检索并安装 / 更新
+
 ## 使用说明
 
 ### 1. 新建连接
@@ -122,8 +130,16 @@ pnpm tauri build
 
 - 连接配置保存在系统应用配置目录下的 `profiles.enc`
   （Windows：`%APPDATA%\<app>\profiles.enc`）
-- **Windows** 上该文件使用当前用户的 DPAPI 加密，其他用户无法解密
-- **非 Windows** 平台目前为明文 JSON 存储，请注意保管
+- **Access Key / Secret Key 存放在系统凭据库**（服务名 `com.s3viewer.desktop`，通过 `keyring` crate），默认不写入配置文件；仅当系统凭据库不可用时才回退写入
+
+  | 平台 | 凭据库 |
+  | --- | --- |
+  | Windows | Windows 凭据管理器（基于 DPAPI） |
+  | macOS | Keychain（钥匙串） |
+  | Linux | Secret Service（gnome-keyring / KWallet） |
+
+- **Windows** 上 `profiles.enc` 文件本身还会使用当前用户的 DPAPI 加密，其他用户无法解密
+- **非 Windows** 平台该文件仅保存非敏感配置（Endpoint / Region / 选项）的 JSON
 - **导出的配置文件包含明文 Access Key / Secret Key**，请妥善保管
 
 ## 常见问题

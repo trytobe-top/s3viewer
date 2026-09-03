@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../api";
 import { t } from "../i18n";
 import type { Profile, PresignResult } from "../types";
@@ -39,16 +40,12 @@ async function generate() {
 async function copy() {
   if (!result.value) return;
   try {
-    await navigator.clipboard.writeText(result.value.url);
+    await writeText(result.value.url);
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
   } catch (e) {
     error.value = String(e);
   }
-}
-
-function openInBrowser() {
-  if (result.value) window.open(result.value.url, "_blank");
 }
 
 onMounted(generate);
@@ -87,9 +84,6 @@ onMounted(generate);
           <input :value="result.url" readonly class="min-w-0 flex-1 bg-transparent text-xs text-slate-700 dark:text-slate-200" />
           <button class="shrink-0 rounded-md bg-slate-100 px-3 py-1.5 text-xs hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600" @click="copy">
             {{ copied ? t("copied") : t("copy") }}
-          </button>
-          <button class="shrink-0 rounded-md bg-slate-100 px-3 py-1.5 text-xs hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600" @click="openInBrowser">
-            {{ t("openBrowser") }}
           </button>
         </div>
         <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">

@@ -139,7 +139,6 @@ const en: Dict = {
   expirySec: "Expiry (seconds)",
   generate: "Generate",
   generating: "Generating...",
-  openBrowser: "Open in browser",
   expiresHint: "This link will expire at {time}",
 
   src_connection: "Connection",
@@ -402,7 +401,6 @@ const zh: Dict = {
   expirySec: "有效期（秒）",
   generate: "生成",
   generating: "生成中...",
-  openBrowser: "浏览器打开",
   expiresHint: "该链接将在 {time} 过期",
 
   src_connection: "连接",

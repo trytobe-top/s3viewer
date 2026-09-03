@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { save } from "@tauri-apps/plugin-dialog";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { api } from "../api";
 import { t } from "../i18n";
 import { pushToast } from "../toast";
@@ -77,7 +78,7 @@ async function copyToClipboard() {
     return;
   }
   try {
-    await navigator.clipboard.writeText(buildJson(chosen));
+    await writeText(buildJson(chosen));
     pushToast("success", t("configCopied", { n: chosen.length }));
   } catch (e) {
     pushToast("error", t("exportFailed", { msg: String(e) }));

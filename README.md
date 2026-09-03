@@ -87,6 +87,14 @@ pnpm tauri build
 
 The installer is generated under `src-tauri/target/release/bundle/`.
 
+## Plugins
+
+First-party preview plugins live in the `plugins/` directory. Each plugin is a folder containing a `manifest.json` and a bundled `entry.js`.
+
+- **Build** — `node plugins/build.mjs` bundles each plugin and packs `plugins/dist/plugin-<id>-<version>.zip`
+- **Versioning** — plugin versions follow the app version. On every release, bump all plugin `manifest.json` versions to the current app version; a plugin that changes in a release carries the app's version, so users see an "Update" prompt
+- **Publish** — upload the generated `plugins/dist/plugin-*.zip` to the GitHub Release; the "Available plugins" section on the plugin page then lists them for install / update
+
 ## Usage
 
 ### 1. Create a connection
@@ -122,8 +130,16 @@ Use the 🔗 icon on a file to generate a presigned URL (GET or PUT) with a sele
 
 - Connection profiles are stored in `profiles.enc` inside the OS app-config directory
   (Windows: `%APPDATA%\<app>\profiles.enc`)
-- On **Windows**, the file is encrypted with the current user's DPAPI — other user accounts cannot decrypt it
-- On **non-Windows** platforms the file currently contains plaintext JSON — treat it accordingly
+- **Access Key / Secret Key are stored in the OS credential vault** via the `keyring` crate (service `com.s3viewer.desktop`) — not written to the config file, except as a fallback when the system keyring is unavailable
+
+  | Platform | Credential vault |
+  | --- | --- |
+  | Windows | Windows Credential Manager (DPAPI-backed) |
+  | macOS | Keychain |
+  | Linux | Secret Service (gnome-keyring / KWallet) |
+
+- On **Windows**, the `profiles.enc` file itself is additionally encrypted with the current user's DPAPI — other user accounts cannot decrypt it
+- On **non-Windows** platforms the file holds only non-secret profile metadata (endpoint / region / options) as JSON
 - **Exported configuration files contain Access Key / Secret Key in plain text.** Keep them safe.
 
 ## FAQ
