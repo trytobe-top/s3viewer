@@ -105,6 +105,9 @@ export const api = {
   deletePrefix: (profileId: string, bucket: string, prefix: string) =>
     invoke<number>("delete_prefix", { profileId, bucket, prefix }),
 
+  deleteSelected: (profileId: string, bucket: string, items: DownloadItem[]) =>
+    invoke<number>("delete_selected", { profileId, bucket, items }),
+
   renameObject: (
     profileId: string,
     bucket: string,

@@ -826,8 +826,7 @@ pub async fn delete_object(p: &Profile, bucket: &str, key: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete_prefix(p: &Profile, bucket: &str, prefix: &str) -> Result<u64> {
-    let client = build_client(p).await?;
+async fn delete_prefix_with_client(client: &Client, bucket: &str, prefix: &str) -> Result<u64> {
     let mut deleted = 0u64;
     let mut token: Option<String> = None;
     loop {
@@ -866,6 +865,31 @@ pub async fn delete_prefix(p: &Profile, bucket: &str, prefix: &str) -> Result<u6
         token = out.next_continuation_token().map(|s| s.to_string());
         if token.is_none() {
             break;
+        }
+    }
+    Ok(deleted)
+}
+
+pub async fn delete_prefix(p: &Profile, bucket: &str, prefix: &str) -> Result<u64> {
+    let client = build_client(p).await?;
+    delete_prefix_with_client(&client, bucket, prefix).await
+}
+
+pub async fn delete_selected(p: &Profile, bucket: &str, items: &[DownloadItem]) -> Result<u64> {
+    let client = build_client(p).await?;
+    let mut deleted = 0u64;
+    for item in items {
+        if item.is_dir {
+            deleted += delete_prefix_with_client(&client, bucket, &item.key).await?;
+        } else {
+            client
+                .delete_object()
+                .bucket(bucket)
+                .key(&item.key)
+                .send()
+                .await
+                .map_err(|e| anyhow!("删除失败: {e}"))?;
+            deleted += 1;
         }
     }
     Ok(deleted)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from "vue";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api } from "../api";
@@ -43,6 +43,171 @@ const breadcrumbs = computed(() => {
   const parts = prefix.value.split("/").filter((p) => p.length);
   return parts;
 });
+
+const navEl = ref<HTMLElement | null>(null);
+const measureEl = ref<HTMLElement | null>(null);
+
+interface CrumbDisplay {
+  visible: number[];
+  truncated: boolean;
+}
+
+const displayMode = ref<CrumbDisplay>({ visible: [], truncated: false });
+const crumbWidths = ref<number[]>([]);
+const fixedWidth = ref(0);
+const bucketWidth = ref(0);
+const sepWidth = ref(0);
+const ellipsisWidth = ref(0);
+const availableWidth = ref(0);
+
+function computeNeeded(visibleIndexes: number[], withEllipsis: boolean): number {
+  const n = visibleIndexes.length;
+  let crumbSum = 0;
+  for (const i of visibleIndexes) crumbSum += crumbWidths.value[i] ?? 0;
+  const sepCount = n + (withEllipsis ? 1 : 0);
+  const elements = 3 + 2 * n + (withEllipsis ? 2 : 0);
+  const gap = parseFloat(getComputedStyle(navEl.value!).gap) || 4;
+  return (
+    fixedWidth.value +
+    bucketWidth.value +
+    crumbSum +
+    sepWidth.value * sepCount +
+    (withEllipsis ? ellipsisWidth.value : 0) +
+    (elements - 1) * gap
+  );
+}
+
+function recomputeDisplay() {
+  const parts = breadcrumbs.value;
+  const N = parts.length;
+  if (!navEl.value || availableWidth.value <= 0 || crumbWidths.value.length !== N) {
+    displayMode.value = { visible: Array.from({ length: N }, (_, i) => i), truncated: false };
+    return;
+  }
+  if (N === 0) {
+    displayMode.value = { visible: [], truncated: computeNeeded([], false) > availableWidth.value };
+    return;
+  }
+  const allIdxs = Array.from({ length: N }, (_, i) => i);
+  if (computeNeeded(allIdxs, false) <= availableWidth.value) {
+    displayMode.value = { visible: allIdxs, truncated: false };
+    return;
+  }
+  const minimal = [0, N - 1];
+  if (computeNeeded(minimal, true) > availableWidth.value) {
+    displayMode.value = { visible: minimal, truncated: true };
+    return;
+  }
+  const visible = new Set<number>(minimal);
+  for (let i = N - 2; i >= 1; i--) {
+    visible.add(i);
+    const idx = [...visible].sort((a, b) => a - b);
+    if (computeNeeded(idx, true) > availableWidth.value) {
+      visible.delete(i);
+      break;
+    }
+  }
+  displayMode.value = {
+    visible: [...visible].sort((a, b) => a - b),
+    truncated: false,
+  };
+}
+
+function measure() {
+  const nav = navEl.value;
+  const m = measureEl.value;
+  if (!nav || !m) return;
+  const kids = Array.from(m.children) as HTMLElement[];
+  const N = breadcrumbs.value.length;
+  if (kids.length < 4) return;
+  fixedWidth.value = kids[0].offsetWidth + kids[1].offsetWidth;
+  bucketWidth.value = kids[2].offsetWidth;
+  sepWidth.value = kids[3].offsetWidth;
+  const widths: number[] = [];
+  for (let i = 0; i < N; i++) {
+    widths.push(kids[4 + 2 * i].offsetWidth);
+  }
+  crumbWidths.value = widths;
+  ellipsisWidth.value = kids[kids.length - 1].offsetWidth;
+  availableWidth.value = nav.clientWidth;
+  recomputeDisplay();
+}
+
+let crumbResizeObserver: ResizeObserver | undefined;
+
+watch(navEl, (el) => {
+  crumbResizeObserver?.disconnect();
+  crumbResizeObserver = undefined;
+  if (el) {
+    crumbResizeObserver = new ResizeObserver(measure);
+    crumbResizeObserver.observe(el);
+  }
+  nextTick(measure);
+});
+
+watch(breadcrumbs, () => {
+  nextTick(measure);
+});
+
+watch(
+  selectedBucket,
+  () => {
+    nextTick(measure);
+  }
+);
+
+watch(
+  () => props.profile.id,
+  () => {
+    nextTick(measure);
+  }
+);
+
+onBeforeUnmount(() => {
+  crumbResizeObserver?.disconnect();
+  crumbResizeObserver = undefined;
+});
+
+const displayedCrumbs = computed(() => {
+  const parts = breadcrumbs.value;
+  const N = parts.length;
+  const { visible, truncated } = displayMode.value;
+  const vis = [...visible].sort((a, b) => a - b);
+  const items: { kind: "crumb" | "ellipsis"; name?: string; index: number; truncated?: boolean }[] = [];
+  for (let k = 0; k < vis.length; k++) {
+    const i = vis[k];
+    if (i >= N) continue;
+    items.push({ kind: "crumb", name: parts[i], index: i, truncated });
+    const next = vis[k + 1];
+    if (next !== undefined && next !== i + 1) {
+      items.push({ kind: "ellipsis", index: -1 });
+    }
+  }
+  return items;
+});
+
+const crumbTruncated = computed(() => displayMode.value.truncated);
+
+const hiddenCrumbs = computed(() => {
+  const parts = breadcrumbs.value;
+  const { visible } = displayMode.value;
+  const result: { name: string; index: number }[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (!visible.includes(i)) result.push({ name: parts[i], index: i });
+  }
+  return result;
+});
+
+const showMoreCrumbs = ref(false);
+
+function toggleMoreCrumbs() {
+  showMoreCrumbs.value = !showMoreCrumbs.value;
+}
+
+function navigateFromPopup(index: number) {
+  showMoreCrumbs.value = false;
+  navigateTo(index);
+}
 
 const previewTarget = ref<ObjectEntry | null>(null);
 const shareTarget = ref<ObjectEntry | null>(null);
@@ -294,6 +459,7 @@ function loadLocation(loc: NavLoc) {
 
 function pushNav(bucket: string, prefix: string) {
   clearSearch();
+  showMoreCrumbs.value = false;
   navHistory.value = navHistory.value.slice(0, navIndex.value + 1);
   navHistory.value.push({ bucket, prefix });
   navIndex.value = navHistory.value.length - 1;
@@ -558,6 +724,34 @@ async function doDelete(e: ObjectEntry) {
   } catch (err) {
     error.value = String(err);
     logError("delete", t("logDeleteFailed", { key: e.key, msg: String(err) }));
+  }
+}
+
+async function deleteSelected() {
+  if (!selectedBucket.value || !selected.value.length) return;
+  const bucket = selectedBucket.value;
+  const n = selected.value.length;
+  if (!(await askConfirm(t("confirmDeleteSelected", { n })))) return;
+  const items: DownloadItem[] = selected.value
+    .map((k) => {
+      const e = displayEntries.value.find((x) => x.key === k);
+      return e ? { key: e.key, is_dir: e.is_dir } : null;
+    })
+    .filter((x): x is DownloadItem => x !== null);
+  if (!items.length) return;
+  busy.value = `${t("delete")} ${items.length} ${t("items")}...`;
+  try {
+    const deleted = await api.deleteSelected(props.profile.id, bucket, items);
+    logSuccess("delete", t("logMultiDeleted", { n: deleted }));
+    pushToast("success", t("multiDeleteDone", { n: deleted }), 4000);
+  } catch (err) {
+    error.value = String(err);
+    logError("delete", t("logMultiDeleteFailed", { msg: String(err) }));
+    pushToast("error", t("multiDeleteFailed", { msg: String(err) }));
+  } finally {
+    busy.value = "";
+    clearSelection();
+    await loadObjects();
   }
 }
 
@@ -844,9 +1038,9 @@ onBeforeUnmount(() => {
           <button class="ml-auto rounded px-1 hover:bg-blue-100 dark:hover:bg-blue-900/60" @click="clearSearch">{{ t("clearSearch") }}</button>
         </div>
         <div class="mb-2 flex items-center gap-2">
-          <nav class="flex min-w-0 items-center gap-1 text-sm">
+          <nav ref="navEl" class="relative flex min-w-0 flex-1 items-center gap-1 text-sm">
             <button
-              class="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
+              class="shrink-0 rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
               :disabled="navIndex <= 0"
               :title="t('back')"
               @click="goBack"
@@ -854,31 +1048,81 @@ onBeforeUnmount(() => {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             </button>
             <button
-              class="rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
+              class="shrink-0 rounded p-1 text-slate-600 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-300 dark:hover:bg-slate-700"
               :disabled="navIndex >= navHistory.length - 1"
               :title="t('forward')"
               @click="goForward"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
-            <button class="font-medium text-blue-600 hover:underline" @click="navigateTo(-1)">
+            <button
+              class="shrink-0 whitespace-nowrap font-medium text-blue-600 hover:underline"
+              :class="crumbTruncated ? 'max-w-48 truncate' : ''"
+              @click="navigateTo(-1)"
+            >
               {{ selectedBucket }}
             </button>
-            <template v-for="(c, i) in breadcrumbs" :key="i">
-              <span class="text-slate-400">/</span>
-              <button class="hover:underline" @click="navigateTo(i)">{{ c }}</button>
+            <template v-for="item in displayedCrumbs" :key="item.kind === 'ellipsis' ? 'ellipsis' : item.index">
+              <span class="shrink-0 text-slate-400">/</span>
+              <button
+                v-if="item.kind === 'ellipsis'"
+                class="shrink-0 rounded px-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                :title="t('moreCrumbs')"
+                @click.stop="toggleMoreCrumbs"
+              >…</button>
+              <button
+                v-else
+                class="shrink-0 whitespace-nowrap hover:underline"
+                :class="item.truncated ? 'max-w-32 truncate' : ''"
+                @click="navigateTo(item.index)"
+              >{{ item.name }}</button>
             </template>
+            <div v-if="showMoreCrumbs" class="fixed inset-0 z-40" @click="showMoreCrumbs = false" @contextmenu.prevent="showMoreCrumbs = false"></div>
+            <div
+              v-if="showMoreCrumbs"
+              class="absolute left-1/2 top-full z-50 mt-1 max-h-64 w-56 -translate-x-1/2 overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-600 dark:bg-slate-800"
+            >
+              <button
+                v-for="c in hiddenCrumbs"
+                :key="c.index"
+                class="flex w-full items-center px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700"
+                @click="navigateFromPopup(c.index)"
+              >
+                <span class="truncate">{{ c.name }}</span>
+              </button>
+            </div>
+            <div
+              ref="measureEl"
+              aria-hidden="true"
+              class="pointer-events-none invisible absolute left-0 top-0 flex items-center gap-1 whitespace-nowrap text-sm"
+            >
+              <button class="rounded p-1 text-slate-600">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <button class="rounded p-1 text-slate-600">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button class="font-medium text-blue-600">{{ selectedBucket }}</button>
+              <template v-for="(c, i) in breadcrumbs" :key="i">
+                <span class="text-slate-400">/</span>
+                <button>{{ c }}</button>
+              </template>
+              <button class="rounded px-1 text-slate-500">…</button>
+            </div>
           </nav>
-          <div class="ml-auto flex items-center gap-2">
+          <div class="flex shrink-0 items-center gap-2">
             <template v-if="selectedCount">
-              <button class="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600" @click="downloadSelected">{{ t("downloadSelected", { n: selectedCount }) }}</button>
-              <button class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="clearSelection">{{ t("cancelSelection") }}</button>
+              <button class="whitespace-nowrap rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600" @click="downloadSelected">{{ t("downloadSelected", { n: selectedCount }) }}</button>
+              <button class="whitespace-nowrap rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-500/90 hover:bg-red-50 dark:border-red-900/70 dark:text-red-400/80 dark:hover:bg-red-950/30" @click="deleteSelected">{{ t("deleteSelected", { n: selectedCount }) }}</button>
+              <button class="whitespace-nowrap rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="clearSelection">{{ t("cancelSelection") }}</button>
             </template>
-            <button class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="loadObjects()">{{ t("refresh") }}</button>
-            <button class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="showNewFolder = true">{{ t("newFolder") }}</button>
-            <button class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" :title="t('uploadBtnHint')" @click="upload">{{ t("upload") }}</button>
-            <button class="rounded-md border border-blue-300 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30" :title="t('uploadFolderBtnHint')" @click="uploadFolder">{{ t("uploadFolder") }}</button>
-            <button class="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-500/90 hover:bg-red-50 dark:border-red-900/70 dark:text-red-400/80 dark:hover:bg-red-950/30" @click="deleteBucket">{{ t("deleteBucket") }}</button>
+            <template v-else>
+              <button class="whitespace-nowrap rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="loadObjects()">{{ t("refresh") }}</button>
+              <button class="whitespace-nowrap rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="showNewFolder = true">{{ t("newFolder") }}</button>
+              <button class="whitespace-nowrap rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" :title="t('uploadBtnHint')" @click="upload">{{ t("upload") }}</button>
+              <button class="whitespace-nowrap rounded-md border border-blue-300 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30" :title="t('uploadFolderBtnHint')" @click="uploadFolder">{{ t("uploadFolder") }}</button>
+              <button class="whitespace-nowrap rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-500/90 hover:bg-red-50 dark:border-red-900/70 dark:text-red-400/80 dark:hover:bg-red-950/30" @click="deleteBucket">{{ t("deleteBucket") }}</button>
+            </template>
           </div>
         </div>
 

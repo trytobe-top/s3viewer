@@ -266,6 +266,19 @@ async fn delete_prefix(
 }
 
 #[tauri::command]
+async fn delete_selected(
+    state: State<'_, ConfigState>,
+    profile_id: String,
+    bucket: String,
+    items: Vec<s3::DownloadItem>,
+) -> Result<u64, String> {
+    let p = get_profile(&state, &profile_id)?;
+    s3::delete_selected(&p, &bucket, &items)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn rename_object(
     state: State<'_, ConfigState>,
     profile_id: String,
@@ -494,6 +507,7 @@ pub fn run() {
             download_selected,
             delete_object,
             delete_prefix,
+            delete_selected,
             rename_object,
             create_folder,
             create_bucket,
