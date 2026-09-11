@@ -122,6 +122,21 @@ function clearDir() {
         </div>
       </section>
 
+      <!-- List -->
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <span class="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 text-sm dark:bg-blue-900/40">📄</span>
+          {{ t("settingsList") }}
+        </h3>
+        <div class="space-y-4">
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">{{ t("loadMoreCount") }}</span>
+            <input v-model.number="settings.loadMoreLimit" type="number" min="1" step="100" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" @change="saveSettings" />
+            <span class="mt-1 block text-xs text-slate-400 dark:text-slate-500">{{ t("loadMoreHint") }}</span>
+          </label>
+        </div>
+      </section>
+
       <!-- Interface & Developer -->
       <section class="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -178,6 +193,27 @@ function clearDir() {
               class="rounded-md border border-slate-300 px-3 py-1 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-700"
               @click="checkForUpdates"
             >{{ t("updateRetry") }}</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- About -->
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <h3 class="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <span class="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 text-sm dark:bg-blue-900/40">ℹ️</span>
+          {{ t("aboutTitle") }}
+        </h3>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="w-20 shrink-0 text-slate-500 dark:text-slate-400">{{ t("aboutDeveloper") }}</span>
+            <span class="text-slate-700 dark:text-slate-200">bigghoti</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-20 shrink-0 text-slate-500 dark:text-slate-400">{{ t("aboutSourceCode") }}</span>
+            <button
+              class="rounded-md border border-slate-300 px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 dark:border-slate-600 dark:text-blue-300 dark:hover:bg-blue-900/30"
+              @click="window.open('https://github.com/trytobe-top/s3viewer', '_blank')"
+            >https://github.com/trytobe-top/s3viewer</button>
           </div>
         </div>
       </section>

@@ -1,8 +1,9 @@
 [package]
 name = "s3viewer"
-version = "0.4.1"
+version = "0.5.0"
 description = "A multi-backend S3 client built with Tauri"
-authors = ["you"]
+authors = ["bigghoti"]
+license = "Apache-2.0"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -31,7 +32,7 @@ rustls-pki-types = "1"
 hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "tls12"] }
 anyhow = "1"
 base64 = "0.22"
-keyring = "3"
+keyring = { version = "3", features = ["windows-native"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 bytes = "1"

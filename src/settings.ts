@@ -14,6 +14,7 @@ function load(): {
   previewPdfLimitMb: number;
   openDevToolsOnStart: boolean;
   showLogCountBadge: boolean;
+  loadMoreLimit: number;
   enabledPlugins: string[];
 } {
   try {
@@ -29,6 +30,7 @@ function load(): {
         previewPdfLimitMb: num(p.previewPdfLimitMb, 10),
         openDevToolsOnStart: !!p.openDevToolsOnStart,
         showLogCountBadge: p.showLogCountBadge === true,
+        loadMoreLimit: num(p.loadMoreLimit, 1000),
         enabledPlugins: strArray(p.enabledPlugins),
       };
     }
@@ -44,6 +46,7 @@ function load(): {
     previewPdfLimitMb: 10,
     openDevToolsOnStart: false,
     showLogCountBadge: false,
+    loadMoreLimit: 1000,
     enabledPlugins: [],
   };
 }
@@ -65,6 +68,7 @@ export const settings = reactive<{
   previewPdfLimitMb: number;
   openDevToolsOnStart: boolean;
   showLogCountBadge: boolean;
+  loadMoreLimit: number;
   enabledPlugins: string[];
 }>(load());
 
@@ -85,6 +89,7 @@ export function saveSettings() {
         previewPdfLimitMb: settings.previewPdfLimitMb,
         openDevToolsOnStart: settings.openDevToolsOnStart,
         showLogCountBadge: settings.showLogCountBadge,
+        loadMoreLimit: settings.loadMoreLimit,
         enabledPlugins: settings.enabledPlugins,
       })
     );

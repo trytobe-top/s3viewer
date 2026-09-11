@@ -198,6 +198,10 @@ const en: Dict = {
   chooseDir: "Choose folder",
   clearDir: "Clear",
   noTransfers: "No transfers yet",
+  retry: "Retry",
+  retryHint: "Resume this transfer from where it left off",
+  resume: "Resume",
+  interrupted: "Interrupted",
   statusRunning: "Running",
   statusDone: "Done",
   statusError: "Failed",
@@ -243,6 +247,10 @@ const en: Dict = {
   showLogCountBadge: "Show log count badge on the Logs button",
   objectCount: "{n} objects",
   truncatedHint: "More available - use Load more",
+  goToSettings: "Go to Settings",
+  settingsList: "Object list",
+  loadMoreCount: "Load more count",
+  loadMoreHint: "Objects loaded automatically when opening a list and per \"Load more\". Each S3 request is capped at 1000.",
   importConfig: "Import Configurations",
   importFromFile: "Import from file",
   importFromClipboard: "Import from clipboard",
@@ -275,6 +283,10 @@ const en: Dict = {
   updateUpToDate: "You are up to date",
   updateCheckFailed: "Failed to check for updates",
   updateRetry: "Retry",
+
+  aboutTitle: "About",
+  aboutDeveloper: "Developer",
+  aboutSourceCode: "Source code",
 };
 
 const zh: Dict = {
@@ -467,6 +479,10 @@ const zh: Dict = {
   chooseDir: "选择目录",
   clearDir: "清除",
   noTransfers: "暂无传输记录",
+  retry: "重试",
+  retryHint: "从断点续传该任务",
+  resume: "继续",
+  interrupted: "已中断",
   statusRunning: "进行中",
   statusDone: "已完成",
   statusError: "失败",
@@ -512,6 +528,10 @@ const zh: Dict = {
   showLogCountBadge: "在「日志」按钮上显示日志数量图标",
   objectCount: "共 {n} 个对象",
   truncatedHint: "还有更多，点击「加载更多」",
+  goToSettings: "前往设置",
+  settingsList: "对象列表",
+  loadMoreCount: "加载更多数量",
+  loadMoreHint: "打开列表时自动加载的数量，以及每次「加载更多」拉取的数量。单次 S3 请求上限为 1000。",
   importConfig: "导入配置",
   importFromFile: "从文件导入",
   importFromClipboard: "从剪贴板导入",
@@ -544,6 +564,10 @@ const zh: Dict = {
   updateUpToDate: "已是最新版本",
   updateCheckFailed: "检查更新失败",
   updateRetry: "重试",
+
+  aboutTitle: "关于",
+  aboutDeveloper: "开发者",
+  aboutSourceCode: "源码地址",
 };
 
 let dict: Dict = en;

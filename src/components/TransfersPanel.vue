@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { open } from "@tauri-apps/plugin-dialog";
-import { transfers, removeTransfer, clearFinishedTransfers } from "../transfers";
+import {
+  transfers,
+  removeTransfer,
+  clearFinishedTransfers,
+  patchTransfer,
+  resetTransferProgress,
+} from "../transfers";
+import type { TransferTask } from "../transfers";
 import { settings, saveSettings } from "../settings";
 import { api } from "../api";
 import { pushToast } from "../toast";
@@ -27,21 +34,27 @@ async function openPath(path: string) {
   }
 }
 
-function statusLabel(s: string) {
-  if (s === "running") return t("statusRunning");
-  if (s === "done") return t("statusDone");
+function statusLabel(task: { status: string; interrupted?: boolean }) {
+  if (task.interrupted) return t("interrupted");
+  if (task.status === "running") return t("statusRunning");
+  if (task.status === "done") return t("statusDone");
   return t("statusError");
 }
 
-function statusPillClass(s: string) {
-  if (s === "running") return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
-  if (s === "done") return "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300";
+function statusPillClass(task: { status: string; interrupted?: boolean }) {
+  if (task.interrupted)
+    return "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  if (task.status === "running")
+    return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
+  if (task.status === "done")
+    return "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300";
   return "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
 }
 
-function progressClass(s: string) {
-  if (s === "error") return "bg-red-500";
-  if (s === "done") return "bg-green-500";
+function progressClass(task: { status: string; interrupted?: boolean }) {
+  if (task.interrupted) return "bg-amber-500";
+  if (task.status === "error") return "bg-red-500";
+  if (task.status === "done") return "bg-green-500";
   return "bg-blue-500";
 }
 
@@ -52,6 +65,37 @@ function formatDate(ts: number) {
 function taskSubline(task: { path?: string; bucket: string; key: string }) {
   if (task.path) return task.path;
   return task.key ? `${task.bucket}/${task.key}` : task.bucket;
+}
+
+function formatBytes(n: number) {
+  if (!isFinite(n) || n < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return (i === 0 ? n : n.toFixed(1)) + " " + units[i];
+}
+
+function formatSpeed(s: number) {
+  if (!isFinite(s) || s <= 0) return "";
+  return formatBytes(s) + "/s";
+}
+
+async function retryTask(task: TransferTask) {
+  if (!task.profileId || !task.retryable || !task.path) return;
+  resetTransferProgress(task.id);
+  try {
+    if (task.type === "upload") {
+      await api.uploadFile(task.profileId, task.bucket, task.key, task.path, task.id);
+    } else {
+      await api.downloadObject(task.profileId, task.bucket, task.key, task.path, task.id);
+    }
+    patchTransfer(task.id, { status: "done", progress: 100 });
+  } catch (e) {
+    patchTransfer(task.id, { status: "error", error: String(e) });
+  }
 }
 </script>
 
@@ -95,20 +139,24 @@ function taskSubline(task: { path?: string; bucket: string; key: string }) {
             <td class="max-w-[240px] truncate px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{{ taskSubline(task) }}</td>
             <td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ task.type === "upload" ? t("upload") : t("download") }}</td>
             <td class="px-3 py-2">
-              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusPillClass(task.status)">{{ statusLabel(task.status) }}</span>
+              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusPillClass(task)">{{ statusLabel(task) }}</span>
             </td>
             <td class="px-3 py-2">
               <div class="flex items-center gap-2">
                 <div class="h-1.5 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-700">
                   <div
                     class="h-full rounded transition-all"
-                    :class="progressClass(task.status)"
+                    :class="progressClass(task)"
                     :style="{ width: (task.status === 'running' ? Math.max(task.progress, 2) : 100) + '%' }"
                   ></div>
                 </div>
                 <span class="w-9 shrink-0 text-right text-xs tabular-nums text-slate-400">
                   {{ task.status === "running" ? Math.round(task.progress) + "%" : task.status === "error" ? "!" : "100%" }}
                 </span>
+              </div>
+              <div v-if="task.status === 'running'" class="mt-1 flex items-center justify-between gap-2 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                <span class="truncate">{{ formatBytes(task.bytes) }}{{ task.total ? " / " + formatBytes(task.total) : "" }}</span>
+                <span v-if="task.speed > 0" class="shrink-0 text-blue-500 dark:text-blue-400">{{ formatSpeed(task.speed) }}</span>
               </div>
             </td>
             <td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ formatDate(task.time) }}</td>
@@ -120,6 +168,12 @@ function taskSubline(task: { path?: string; bucket: string; key: string }) {
                   :title="t('openAction')"
                   @click="openPath(task.path)"
                 >{{ t("openAction") }}</button>
+                <button
+                  v-if="task.status === 'error' && task.retryable && task.profileId"
+                  class="rounded-md border border-blue-300 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                  :title="t('retryHint')"
+                  @click="retryTask(task)"
+                >{{ task.interrupted ? t("resume") : t("retry") }}</button>
                 <button class="rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700" :title="t('delete')" @click="removeTransfer(task.id)">✕</button>
               </div>
             </td>

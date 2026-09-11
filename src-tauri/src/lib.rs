@@ -1,5 +1,6 @@
 mod config;
 mod plugins;
+mod resume;
 mod s3;
 
 use base64::Engine;
@@ -89,9 +90,10 @@ async fn list_objects(
     bucket: String,
     prefix: String,
     continuation_token: Option<String>,
+    max_keys: Option<i32>,
 ) -> Result<s3::ObjectList, String> {
     let p = get_profile(&state, &profile_id)?;
-    s3::list_objects(&p, &bucket, &prefix, continuation_token)
+    s3::list_objects(&p, &bucket, &prefix, continuation_token, max_keys)
         .await
         .map_err(|e| e.to_string())
 }

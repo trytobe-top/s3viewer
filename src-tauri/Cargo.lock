@@ -2617,7 +2617,9 @@ version = "3.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
 dependencies = [
+ "byteorder",
  "log",
+ "windows-sys 0.60.2",
  "zeroize",
 ]
 
@@ -3832,7 +3834,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "s3viewer"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "aws-config",

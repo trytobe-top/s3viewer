@@ -27,6 +27,7 @@ const emit = defineEmits<{
   refreshProfiles: [];
   editProfile: [];
   openNewTab: [payload: { profile: Profile; bucket: string | null; prefix: string }];
+  openSettings: [];
 }>();
 
 const buckets = ref<BucketInfo[]>([]);
@@ -366,6 +367,7 @@ async function downloadSelected() {
     bucket: selectedBucket.value,
     key: "",
     path: dir,
+    profileId: props.profile.id,
   });
   busy.value = `${t("download")} ${items.length} ${t("items")}...`;
   try {
@@ -407,20 +409,29 @@ async function loadObjects(cont = false) {
   if (!selectedBucket.value) return;
   loading.value = true;
   error.value = "";
+  const limit = Math.max(1, settings.loadMoreLimit);
+  const pageSize = Math.min(limit, 1000);
+  const target = cont ? entries.value.length + limit : limit;
+  let token = cont ? nextToken.value : null;
+  let acc = cont ? [...entries.value] : [];
+  let truncated = false;
   try {
-    const res = await api.listObjects(
-      props.profile.id,
-      selectedBucket.value,
-      prefix.value,
-      cont ? nextToken.value : null
-    );
-    if (cont) {
-      entries.value = entries.value.concat(res.entries);
-    } else {
-      entries.value = res.entries;
+    while (acc.length < target) {
+      const res = await api.listObjects(
+        props.profile.id,
+        selectedBucket.value,
+        prefix.value,
+        token,
+        pageSize
+      );
+      acc = acc.concat(res.entries);
+      token = res.next_token ?? null;
+      truncated = res.is_truncated;
+      if (!truncated || !token) break;
     }
-    isTruncated.value = res.is_truncated;
-    nextToken.value = res.next_token;
+    entries.value = acc;
+    isTruncated.value = truncated;
+    nextToken.value = token;
   } catch (e) {
     error.value = String(e);
     logError("browse", t("logListFailed", { bucket: selectedBucket.value, prefix: prefix.value || "/", msg: String(e) }));
@@ -558,6 +569,8 @@ async function uploadFiles(paths: string[]) {
       bucket,
       key,
       path: file,
+      profileId: props.profile.id,
+      retryable: true,
     });
     try {
       await api.uploadFile(props.profile.id, bucket, key, file, taskId);
@@ -612,6 +625,7 @@ async function uploadFolderFiles(dir: string, notify: boolean): Promise<number> 
     bucket,
     key: prefix.value,
     path: dir,
+    profileId: props.profile.id,
   });
   let n = 0;
   try {
@@ -660,6 +674,8 @@ async function download(e: ObjectEntry) {
     bucket: selectedBucket.value ?? "",
     key: e.key,
     path: dest,
+    profileId: props.profile.id,
+    retryable: true,
   });
   busy.value = `${t("download")} ${name}...`;
   try {
@@ -687,6 +703,7 @@ async function downloadFolder(e: ObjectEntry) {
     bucket: selectedBucket.value,
     key: e.key,
     path: dir,
+    profileId: props.profile.id,
   });
   busy.value = `${t("download")} ${e.key}...`;
   try {
@@ -1228,8 +1245,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="isTruncated" class="border-t border-slate-200 bg-white p-2 text-center dark:border-slate-700 dark:bg-slate-800">
+      <div v-if="isTruncated" class="flex items-center justify-center gap-3 border-t border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-800">
         <button class="rounded-md border border-slate-300 px-3 py-1 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700" @click="loadObjects(true)">{{ t("loadMore") }}</button>
+        <button class="rounded-md border border-blue-300 px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30" @click="emit('openSettings')">{{ t("goToSettings") }} →</button>
       </div>
     </section>
 

@@ -5,7 +5,7 @@ import { api } from "./api";
 import { logs } from "./logs";
 import { t } from "./i18n";
 import { emitBack, emitForward } from "./navbus";
-import { patchTransfer, runningTransferCount } from "./transfers";
+import { patchTransferProgress, runningTransferCount } from "./transfers";
 import { openDevTools } from "./devtools";
 import { settings } from "./settings";
 import { refreshPlugins } from "./plugins";
@@ -157,7 +157,7 @@ onMounted(async () => {
   await listen<any>("transfer://progress", (e) => {
     const p = e.payload;
     if (p && p.taskId) {
-      patchTransfer(p.taskId, { progress: p.progress ?? 0 });
+      patchTransferProgress(p.taskId, p.progress ?? 0, p.bytes ?? 0, p.total ?? 0);
     }
   });
   if (settings.openDevToolsOnStart) {
@@ -323,6 +323,7 @@ function onAuxClick(e: MouseEvent) {
             @refresh-profiles="loadProfiles"
             @edit-profile="openEdit"
             @open-new-tab="onOpenNewTab"
+            @open-settings="openToolTab('settings')"
           />
           <TransfersPanel v-else-if="tab.kind === 'transfers'" />
           <LogsPanel v-else-if="tab.kind === 'logs'" />

@@ -24,13 +24,15 @@ export const api = {
     profileId: string,
     bucket: string,
     prefix: string,
-    continuationToken: string | null
+    continuationToken: string | null,
+    maxKeys?: number
   ) =>
     invoke<ObjectList>("list_objects", {
       profileId,
       bucket,
       prefix,
       continuationToken,
+      maxKeys,
     }),
 
   searchObjects: (
