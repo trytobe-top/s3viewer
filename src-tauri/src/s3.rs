@@ -272,13 +272,90 @@ pub struct DownloadItem {
     pub is_dir: bool,
 }
 
-async fn download_prefix_all(
+/// Build a valid local filesystem path from an S3 key under `local_dir`.
+/// Windows forbids several characters in file/directory names, and S3 keys
+/// regularly contain them (`: * ? " < > |`); those are replaced so the
+/// download does not die with ERROR_DIRECTORY / ERROR_INVALID_NAME.
+fn safe_local_path(local_dir: &str, key: &str) -> PathBuf {
+    let mut out = PathBuf::from(local_dir);
+    for comp in key.split('/') {
+        if comp.is_empty() || comp == "." {
+            continue;
+        }
+        let safe = sanitize_component(comp);
+        if safe.is_empty() {
+            continue;
+        }
+        out.push(safe);
+    }
+    out
+}
+
+/// Replace characters that are not allowed in a single Windows path component.
+fn sanitize_component(comp: &str) -> String {
+    #[cfg(windows)]
+    {
+        let mut s: String = comp
+            .chars()
+            .map(|c| match c {
+                '<' | '>' | ':' | '"' | '|' | '?' | '*' => '_',
+                _ => c,
+            })
+            .collect();
+        while s.ends_with('.') || s.ends_with(' ') {
+            s.pop();
+        }
+        if s.is_empty() {
+            s.push('_');
+        }
+        s
+    }
+    #[cfg(not(windows))]
+    {
+        comp.to_string()
+    }
+}
+
+/// True when a key is a "folder marker" object (ends with `/`). Such objects
+/// carry no content; their purpose is to materialise the directory itself.
+fn is_dir_marker(key: &str) -> bool {
+    key.ends_with('/')
+}
+
+/// Create `parent`, tolerating the case where a file/dir of the same name
+/// already exists (S3 allows a key `a` and a nested `a/b` to coexist).
+/// If a plain *file* occupies the path, remove it so the directory can be made.
+fn ensure_dir(parent: &std::path::Path) -> Result<()> {
+    if parent.is_dir() {
+        return Ok(());
+    }
+    if parent.exists() {
+        // A file occupies the path we need as a directory; drop it so nested
+        // content can be written (avoids ERROR_PATH_NOT_FOUND further down).
+        std::fs::remove_file(parent)?;
+    }
+    std::fs::create_dir_all(parent).map_err(|e| e.into())
+}
+
+/// Write `bytes` to `dest`, tolerating the case where `dest` already exists
+/// as a directory (a folder-marker that must be kept as a dir).
+fn write_file(dest: &std::path::Path, bytes: &[u8]) -> Result<()> {
+    if dest.is_dir() {
+        return Ok(());
+    }
+    if dest.exists() {
+        std::fs::remove_file(dest)?;
+    }
+    std::fs::write(dest, bytes).map_err(|e| e.into())
+}
+
+/// Collect the object keys under `prefix` (paginated) that carry actual content.
+async fn list_all_keys(
     client: &Client,
     bucket: &str,
     prefix: &str,
-    local_dir: &str,
-) -> Result<u64> {
-    let mut count = 0u64;
+) -> Result<Vec<String>> {
+    let mut keys = Vec::new();
     let mut token: Option<String> = None;
     loop {
         let mut req = client.list_objects_v2().bucket(bucket).prefix(prefix);
@@ -288,20 +365,7 @@ async fn download_prefix_all(
         let out = req.send().await.map_err(|e| anyhow!("列出对象失败: {}", sdk_err(e)))?;
         for obj in out.contents() {
             if let Some(k) = obj.key() {
-                let dest = Path::new(local_dir).join(k);
-                if let Some(parent) = dest.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                let body = client
-                    .get_object()
-                    .bucket(bucket)
-                    .key(k)
-                    .send()
-                    .await
-                    .map_err(|e| anyhow!("下载 {k} 失败: {}", sdk_err(e)))?;
-                let bytes = body.body.collect().await?.into_bytes();
-                std::fs::write(&dest, bytes)?;
-                count += 1;
+                keys.push(k.to_string());
             }
         }
         if !out.is_truncated().unwrap_or(false) {
@@ -311,6 +375,58 @@ async fn download_prefix_all(
         if token.is_none() {
             break;
         }
+    }
+    Ok(keys)
+}
+
+async fn download_prefix_all(
+    client: &Client,
+    bucket: &str,
+    prefix: &str,
+    local_dir: &str,
+) -> Result<u64> {
+    let keys = list_all_keys(client, bucket, prefix).await?;
+    // Download only the content under the selected prefix; strip the prefix so
+    // the local tree starts at the selected folder instead of recreating the
+    // full S3 key path.
+    let local_for = |k: &str| safe_local_path(local_dir, k.strip_prefix(prefix).unwrap_or(k));
+    // First pass: create every directory (parents + folder markers) so nested
+    // files never hit a missing/invalid path, regardless of list ordering.
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for k in &keys {
+        if is_dir_marker(k) {
+            dirs.push(local_for(k).parent().unwrap_or(Path::new(local_dir)).to_path_buf());
+        } else {
+            let dest = local_for(k);
+            if let Some(parent) = dest.parent() {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+    }
+    for d in dirs {
+        ensure_dir(&d)?;
+    }
+    // Second pass: download file contents.
+    let mut count = 0u64;
+    for k in &keys {
+        if is_dir_marker(k) {
+            continue;
+        }
+        let dest = local_for(k);
+        if dest.is_dir() {
+            // Key collides with an already-created directory; skip it.
+            continue;
+        }
+        let body = client
+            .get_object()
+            .bucket(bucket)
+            .key(k)
+            .send()
+            .await
+            .map_err(|e| anyhow!("下载 {k} 失败: {}", sdk_err(e)))?;
+        let bytes = body.body.collect().await?.into_bytes();
+        write_file(&dest, &bytes)?;
+        count += 1;
     }
     Ok(count)
 }
@@ -324,12 +440,26 @@ pub async fn download_selected(
     let client = build_client(p).await?;
     let mut count = 0u64;
     for item in items {
-        if item.is_dir {
-            count += download_prefix_all(&client, bucket, &item.key, local_dir).await?;
+        if item.is_dir || is_dir_marker(&item.key) {
+            // For a selected folder, put its contents directly under the chosen
+            // local dir (folder name becomes the top-level directory) instead of
+            // recreating the whole S3 key path.
+            let name = item
+                .key
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("folder");
+            let local_target = Path::new(local_dir).join(name);
+            if is_dir_marker(&item.key) {
+                ensure_dir(&local_target)?;
+            }
+            count += download_prefix_all(&client, bucket, &item.key, &local_target.to_string_lossy()).await?;
         } else {
-            let dest = Path::new(local_dir).join(&item.key);
+            let dest = safe_local_path(local_dir, &item.key);
             if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent)?;
+                ensure_dir(parent)?;
             }
             let out = client
                 .get_object()
@@ -339,7 +469,7 @@ pub async fn download_selected(
                 .await
                 .map_err(|e| anyhow!("下载 {} 失败: {}", item.key, sdk_err(e)))?;
             let bytes = out.body.collect().await?.into_bytes();
-            std::fs::write(&dest, bytes)?;
+            write_file(&dest, &bytes)?;
             count += 1;
         }
     }

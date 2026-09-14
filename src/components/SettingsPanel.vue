@@ -34,6 +34,11 @@ function clearDir() {
   settings.downloadDir = "";
   saveSettings();
 }
+
+const REPO_URL = "https://github.com/trytobe-top/s3viewer";
+function openRepo() {
+  window.open(REPO_URL, "_blank");
+}
 </script>
 
 <template>
@@ -212,7 +217,7 @@ function clearDir() {
             <span class="w-20 shrink-0 text-slate-500 dark:text-slate-400">{{ t("aboutSourceCode") }}</span>
             <button
               class="rounded-md border border-slate-300 px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50 dark:border-slate-600 dark:text-blue-300 dark:hover:bg-blue-900/30"
-              @click="window.open('https://github.com/trytobe-top/s3viewer', '_blank')"
+              @click="openRepo"
             >https://github.com/trytobe-top/s3viewer</button>
           </div>
         </div>

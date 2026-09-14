@@ -547,14 +547,33 @@ async function upload() {
 async function uploadFiles(paths: string[]) {
   if (!selectedBucket.value || !paths.length) return;
   const bucket = selectedBucket.value;
-  busy.value = `${t("upload")} ${paths.length} ${t("items")}...`;
+  const norm = (p: string) => p.replace(/[\\/]+$/, "");
+  // Classify every dropped path once so a directory and its nested children
+  // are not processed twice (drops can report a folder plus its contents).
+  const kinds = new Map<string, "file" | "dir" | "missing">();
+  for (const p of paths) {
+    const k = await api.pathKind(p).catch(() => "file" as const);
+    kinds.set(norm(p), k);
+  }
+  // Skip paths nested inside a dropped directory; the folder walk covers them.
+  const dirs = [...kinds.entries()]
+    .filter(([, k]) => k === "dir")
+    .map(([p]) => p);
+  const list = [...kinds.keys()].filter(
+    (p) =>
+      !dirs.some(
+        (d) => p !== d && (p.startsWith(d + "\\") || p.startsWith(d + "/"))
+      )
+  );
+  if (!list.length) return;
+  busy.value = `${t("upload")} ${list.length} ${t("items")}...`;
   let ok = 0;
   let fail = 0;
-  for (const file of paths) {
-    const kind = await api.pathKind(file).catch(() => "file" as const);
+  for (const file of list) {
+    const kind = kinds.get(file) ?? "file";
     if (kind === "dir") {
       try {
-        ok += await uploadFolderFiles(file, false);
+        ok += await uploadFolderFiles(file, false, true);
       } catch (e) {
         fail++;
         logError("upload", t("logFolderUploadFailed", { name: file, msg: String(e) }));
@@ -615,25 +634,30 @@ async function uploadFolder() {
   }
 }
 
-async function uploadFolderFiles(dir: string, notify: boolean): Promise<number> {
+async function uploadFolderFiles(
+  dir: string,
+  notify: boolean,
+  createFolder = false
+): Promise<number> {
   if (!selectedBucket.value) return 0;
   const bucket = selectedBucket.value;
   const name = dir.split(/[\\/]/).filter(Boolean).pop() || "folder";
+  const destPrefix = createFolder ? prefix.value + name + "/" : prefix.value;
   const taskId = addTransfer({
     type: "upload",
     name,
     bucket,
-    key: prefix.value,
+    key: destPrefix,
     path: dir,
     profileId: props.profile.id,
   });
   let n = 0;
   try {
-    n = await api.uploadFolder(props.profile.id, bucket, prefix.value, dir, taskId);
+    n = await api.uploadFolder(props.profile.id, bucket, destPrefix, dir, taskId);
     patchTransfer(taskId, { status: "done", progress: 100 });
     logSuccess(
       "upload",
-      t("logFolderUploaded", { name, bucket, prefix: prefix.value || "/", n })
+      t("logFolderUploaded", { name, bucket, prefix: destPrefix || "/", n })
     );
     if (notify) {
       pushToast("success", t("uploadFolderDone", { name, n }), 4000);
