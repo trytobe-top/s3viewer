@@ -45,6 +45,11 @@ export interface DownloadItem {
   is_dir: boolean;
 }
 
+export interface LocalFile {
+  rel: string;
+  abs: string;
+}
+
 export interface PluginInfo {
   id: string;
   name: string;

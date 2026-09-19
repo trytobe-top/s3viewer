@@ -28,6 +28,7 @@ const emit = defineEmits<{
   editProfile: [];
   openNewTab: [payload: { profile: Profile; bucket: string | null; prefix: string }];
   openSettings: [];
+  openTransfers: [];
 }>();
 
 const buckets = ref<BucketInfo[]>([]);
@@ -361,34 +362,68 @@ async function downloadSelected() {
     })
     .filter((x): x is DownloadItem => x !== null);
   if (!items.length) return;
-  const taskId = addTransfer({
-    type: "download",
-    name: t("downloadSelected", { n: items.length }),
-    bucket: selectedBucket.value,
-    key: "",
-    path: dir,
-    profileId: props.profile.id,
-  });
   busy.value = `${t("download")} ${items.length} ${t("items")}...`;
+  emit("openTransfers");
   try {
-    const n = await api.downloadSelected(
-      props.profile.id,
-      selectedBucket.value,
-      items,
-      dir
-    );
-    patchTransfer(taskId, { status: "done", progress: 100 });
-    pushToast("success", t("multiDownloadDone", { n }), 4000, openAction(dir));
-    logSuccess("download", t("logMultiDownloaded", { n, dir }));
+    const keys: string[] = [];
+    for (const item of items) {
+      if (item.is_dir) {
+        const ks = await api.listAllObjects(props.profile.id, selectedBucket.value, item.key);
+        keys.push(...ks.filter((k) => !k.endsWith("/")));
+      } else {
+        keys.push(item.key);
+      }
+    }
+    if (!keys.length) {
+      clearSelection();
+      return;
+    }
+    const { ok, fail } = await downloadKeys(keys, dir);
+    if (fail === 0) {
+      pushToast("success", t("multiDownloadDone", { n: ok }), 4000, openAction(dir));
+      logSuccess("download", t("logMultiDownloaded", { n: ok, dir }));
+    } else {
+      pushToast("error", t("downloadPartial", { ok, fail }));
+      logError("download", t("logMultiDownloadFailed", { msg: `${ok} ok, ${fail} failed` }));
+    }
   } catch (e) {
     error.value = String(e);
-    patchTransfer(taskId, { status: "error", error: String(e) });
     pushToast("error", t("transferError", { kind: t("downloadKind"), msg: String(e) }));
     logError("download", t("logMultiDownloadFailed", { msg: String(e) }));
   } finally {
     busy.value = "";
     clearSelection();
   }
+}
+
+async function downloadKeys(keys: string[], dir: string) {
+  const bucket = selectedBucket.value!;
+  let ok = 0;
+  let fail = 0;
+  for (const key of keys) {
+    const name = key.split("/").pop() || key;
+    const dest = joinDownloadPath(dir, key);
+    const taskId = addTransfer({
+      type: "download",
+      name,
+      bucket,
+      key,
+      path: dest,
+      profileId: props.profile.id,
+      retryable: true,
+    });
+    try {
+      await api.downloadObject(props.profile.id, bucket, key, dest, taskId);
+      patchTransfer(taskId, { status: "done", progress: 100 });
+      ok++;
+      logSuccess("download", t("logDownloadedTo", { name: key, path: dest }));
+    } catch (err) {
+      fail++;
+      patchTransfer(taskId, { status: "error", error: String(err) });
+      logError("download", t("logDownloadFailed", { key, msg: String(err) }));
+    }
+  }
+  return { ok, fail };
 }
 
 async function loadBuckets() {
@@ -573,7 +608,12 @@ async function uploadFiles(paths: string[]) {
     const kind = kinds.get(file) ?? "file";
     if (kind === "dir") {
       try {
-        ok += await uploadFolderFiles(file, false, true);
+        const r = await uploadFolderFiles(file, false, true);
+        ok += r.ok;
+        if (r.fail > 0) {
+          fail += r.fail;
+          logError("upload", t("logFolderUploadFailed", { name: file, msg: `${r.ok} ok, ${r.fail} failed` }));
+        }
       } catch (e) {
         fail++;
         logError("upload", t("logFolderUploadFailed", { name: file, msg: String(e) }));
@@ -624,8 +664,7 @@ async function uploadFolder() {
   if (!dir || typeof dir !== "string") return;
   busy.value = `${t("upload")} ${dir.split(/[\\/]/).filter(Boolean).pop() || "folder"}...`;
   try {
-    const n = await uploadFolderFiles(dir, true);
-    if (n === 0) pushToast("info", t("uploadFolderEmpty", { name: dir }), 3000);
+    await uploadFolderFiles(dir, true);
   } catch (e) {
     pushToast("error", t("transferError", { kind: t("uploadKind"), msg: String(e) }));
   } finally {
@@ -638,36 +677,55 @@ async function uploadFolderFiles(
   dir: string,
   notify: boolean,
   createFolder = false
-): Promise<number> {
-  if (!selectedBucket.value) return 0;
+): Promise<{ ok: number; fail: number }> {
+  if (!selectedBucket.value) return { ok: 0, fail: 0 };
   const bucket = selectedBucket.value;
   const name = dir.split(/[\\/]/).filter(Boolean).pop() || "folder";
   const destPrefix = createFolder ? prefix.value + name + "/" : prefix.value;
-  const taskId = addTransfer({
-    type: "upload",
-    name,
-    bucket,
-    key: destPrefix,
-    path: dir,
-    profileId: props.profile.id,
-  });
-  let n = 0;
-  try {
-    n = await api.uploadFolder(props.profile.id, bucket, destPrefix, dir, taskId);
-    patchTransfer(taskId, { status: "done", progress: 100 });
-    logSuccess(
-      "upload",
-      t("logFolderUploaded", { name, bucket, prefix: destPrefix || "/", n })
-    );
-    if (notify) {
-      pushToast("success", t("uploadFolderDone", { name, n }), 4000);
-    }
-    return n;
-  } catch (e) {
-    patchTransfer(taskId, { status: "error", error: String(e) });
-    logError("upload", t("logFolderUploadFailed", { name, msg: String(e) }));
-    throw e;
+  const files = await api.listLocalFiles(dir);
+  if (!files.length) {
+    if (notify) pushToast("info", t("uploadFolderEmpty", { name }), 3000);
+    return { ok: 0, fail: 0 };
   }
+  emit("openTransfers");
+  let ok = 0;
+  let fail = 0;
+  for (const f of files) {
+    const key = destPrefix + f.rel;
+    const taskId = addTransfer({
+      type: "upload",
+      name: f.rel,
+      bucket,
+      key,
+      path: f.abs,
+      profileId: props.profile.id,
+      retryable: true,
+    });
+    try {
+      await api.uploadFile(props.profile.id, bucket, key, f.abs, taskId);
+      patchTransfer(taskId, { status: "done", progress: 100 });
+      ok++;
+      logSuccess("upload", t("logUploaded", { name: f.rel, bucket, key }));
+    } catch (e) {
+      fail++;
+      patchTransfer(taskId, { status: "error", error: String(e) });
+      logError("upload", t("logUploadFailed", { name: f.rel, msg: String(e) }));
+    }
+  }
+  logSuccess(
+    "upload",
+    t("logFolderUploaded", { name, bucket, prefix: destPrefix || "/", n: ok })
+  );
+  if (notify) {
+    if (fail === 0 && ok > 0) {
+      pushToast("success", t("uploadFolderDone", { name, n: ok }), 4000);
+    } else if (ok === 0 && fail > 0) {
+      pushToast("error", t("uploadMultiFailed", { n: fail }));
+    } else if (ok > 0 && fail > 0) {
+      pushToast("error", t("uploadPartial", { ok, fail }));
+    }
+  }
+  return { ok, fail };
 }
 
 function joinDownloadPath(dir: string, key: string): string {
@@ -721,25 +779,25 @@ async function downloadFolder(e: ObjectEntry) {
   if (!selectedBucket.value) return;
   const dir = await pickDownloadDir();
   if (!dir) return;
-  const taskId = addTransfer({
-    type: "download",
-    name: e.key,
-    bucket: selectedBucket.value,
-    key: e.key,
-    path: dir,
-    profileId: props.profile.id,
-  });
   busy.value = `${t("download")} ${e.key}...`;
+  emit("openTransfers");
   try {
-    const n = await api.downloadSelected(props.profile.id, selectedBucket.value, [
-      { key: e.key, is_dir: true },
-    ], dir);
-    patchTransfer(taskId, { status: "done", progress: 100 });
-    pushToast("success", t("multiDownloadDone", { n }), 4000, openAction(dir));
-    logSuccess("download", t("logMultiDownloaded", { n, dir }));
+    const ks = await api.listAllObjects(props.profile.id, selectedBucket.value, e.key);
+    const keys = ks.filter((k) => !k.endsWith("/"));
+    if (!keys.length) {
+      pushToast("info", t("downloadFolderEmpty", { name: e.key }), 3000);
+      return;
+    }
+    const { ok, fail } = await downloadKeys(keys, dir);
+    if (fail === 0) {
+      pushToast("success", t("multiDownloadDone", { n: ok }), 4000, openAction(dir));
+      logSuccess("download", t("logMultiDownloaded", { n: ok, dir }));
+    } else {
+      pushToast("error", t("downloadPartial", { ok, fail }));
+      logError("download", t("logMultiDownloadFailed", { msg: `${ok} ok, ${fail} failed` }));
+    }
   } catch (err) {
     error.value = String(err);
-    patchTransfer(taskId, { status: "error", error: String(err) });
     pushToast("error", t("transferError", { kind: t("downloadKind"), msg: String(err) }));
     logError("download", t("logMultiDownloadFailed", { msg: String(err) }));
   } finally {

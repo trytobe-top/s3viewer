@@ -48,7 +48,10 @@ fn sdk_err<E>(
     >,
 ) -> String
 where
-    E: std::fmt::Display + aws_smithy_types::error::metadata::ProvideErrorMetadata,
+    E: std::fmt::Display
+        + std::error::Error
+        + aws_smithy_types::error::metadata::ProvideErrorMetadata
+        + 'static,
 {
     use aws_smithy_types::error::metadata::ProvideErrorMetadata;
     match e {
@@ -58,7 +61,23 @@ where
             let msg = ProvideErrorMetadata::message(ctx.err()).unwrap_or("");
             format!("HTTP {status} [code={code}] {msg}")
         }
-        other => other.to_string(),
+        other => {
+            // Surface the underlying transport cause (e.g. connection reset,
+            // TLS error, timeout) instead of the generic "dispatch failure" /
+            // "request has timed out" message the SDK prints for those variants.
+            let mut msg = other.to_string();
+            let mut src = std::error::Error::source(&other);
+            let mut depth = 0;
+            while let Some(s) = src {
+                let s_str = s.to_string();
+                if !s_str.is_empty() && !msg.contains(&s_str) && depth < 3 {
+                    msg = format!("{msg}: {s_str}");
+                }
+                src = s.source();
+                depth += 1;
+            }
+            msg
+        }
     }
 }
 
@@ -1345,6 +1364,43 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+pub struct LocalFile {
+    /// Path relative to the selected folder, using `/` separators.
+    pub rel: String,
+    /// Absolute path on disk.
+    pub abs: String,
+}
+
+/// Recursively list the files inside a local folder, one entry per file.
+pub fn list_local_files(local_dir: &str) -> Result<Vec<LocalFile>> {
+    let root = Path::new(local_dir);
+    let mut paths: Vec<PathBuf> = Vec::new();
+    collect_files(root, &mut paths)?;
+    let mut files: Vec<LocalFile> = paths
+        .into_iter()
+        .map(|p| {
+            let rel = p
+                .strip_prefix(root)
+                .map_err(|_| anyhow!("计算相对路径失败"))?
+                .to_string_lossy()
+                .replace('\\', "/");
+            Ok(LocalFile {
+                rel,
+                abs: p.to_string_lossy().to_string(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    files.sort_by(|a, b| a.rel.cmp(&b.rel));
+    Ok(files)
+}
+
+/// List every object key under a prefix (recursive, paginated).
+pub async fn list_all_objects(p: &Profile, bucket: &str, prefix: &str) -> Result<Vec<String>> {
+    let client = build_client(p).await?;
+    list_all_keys(&client, bucket, prefix).await
 }
 
 pub async fn upload_folder(

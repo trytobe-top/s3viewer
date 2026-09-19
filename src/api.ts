@@ -6,6 +6,7 @@ import type {
   Preview,
   PresignResult,
   DownloadItem,
+  LocalFile,
   PluginInfo,
   RemotePlugin,
 } from "./types";
@@ -85,6 +86,12 @@ export const api = {
   ) => invoke<number>("upload_folder", { profileId, bucket, prefix, localDir, taskId }),
 
   pathKind: (path: string) => invoke<"file" | "dir" | "missing">("path_kind", { path }),
+
+  listLocalFiles: (localDir: string) =>
+    invoke<LocalFile[]>("list_local_files", { localDir }),
+
+  listAllObjects: (profileId: string, bucket: string, prefix: string) =>
+    invoke<string[]>("list_all_objects", { profileId, bucket, prefix }),
 
   downloadObject: (
     profileId: string,

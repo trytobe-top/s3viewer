@@ -194,6 +194,24 @@ fn path_kind(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn list_local_files(local_dir: String) -> Result<Vec<s3::LocalFile>, String> {
+    s3::list_local_files(&local_dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_all_objects(
+    state: State<'_, ConfigState>,
+    profile_id: String,
+    bucket: String,
+    prefix: String,
+) -> Result<Vec<String>, String> {
+    let p = get_profile(&state, &profile_id)?;
+    s3::list_all_objects(&p, &bucket, &prefix)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn download_object(
     app: tauri::AppHandle,
     state: State<'_, ConfigState>,
@@ -505,6 +523,8 @@ pub fn run() {
             upload_file,
             upload_folder,
             path_kind,
+            list_local_files,
+            list_all_objects,
             download_object,
             download_selected,
             delete_object,

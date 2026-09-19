@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   transfers,
@@ -67,6 +68,16 @@ function taskSubline(task: { path?: string; bucket: string; key: string }) {
   return task.key ? `${task.bucket}/${task.key}` : task.bucket;
 }
 
+function taskS3Path(task: { bucket: string; key: string }) {
+  return task.key ? `${task.bucket}/${task.key}` : task.bucket;
+}
+
+const expandedId = ref<string | null>(null);
+
+function toggleDetail(id: string) {
+  expandedId.value = expandedId.value === id ? null : id;
+}
+
 function formatBytes(n: number) {
   if (!isFinite(n) || n < 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -84,7 +95,7 @@ function formatSpeed(s: number) {
 }
 
 async function retryTask(task: TransferTask) {
-  if (!task.profileId || !task.retryable || !task.path) return;
+  if (!task.profileId || !task.path || !task.key) return;
   resetTransferProgress(task.id);
   try {
     if (task.type === "upload") {
@@ -121,63 +132,100 @@ async function retryTask(task: TransferTask) {
             <th class="px-3 py-2 font-medium">{{ t("colStatus") }}</th>
             <th class="w-44 px-3 py-2 font-medium">{{ t("colProgress") }}</th>
             <th class="w-48 px-3 py-2 font-medium">{{ t("colDate") }}</th>
-            <th class="w-28 px-3 py-2 font-medium">{{ t("actions") }}</th>
+            <th class="w-44 px-3 py-2 font-medium">{{ t("actions") }}</th>
           </tr>
         </thead>
         <tbody v-if="!transfers.tasks.length">
           <tr><td colspan="7" class="px-4 py-10 text-center text-slate-400">{{ t("noTransfers") }}</td></tr>
         </tbody>
         <tbody v-else>
-          <tr v-for="task in transfers.tasks" :key="task.id" class="border-t border-slate-100 dark:border-slate-700">
-            <td class="px-4 py-2">
-              <div class="flex items-center gap-2">
-                <span class="text-base">{{ task.type === "upload" ? "⬆️" : "⬇️" }}</span>
-                <span class="max-w-[200px] truncate font-medium">{{ task.name }}</span>
-              </div>
-              <div v-if="task.status === 'error' && task.error" class="mt-0.5 max-w-[300px] truncate text-xs text-red-500" :title="task.error">{{ task.error }}</div>
-            </td>
-            <td class="max-w-[240px] truncate px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{{ taskSubline(task) }}</td>
-            <td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ task.type === "upload" ? t("upload") : t("download") }}</td>
-            <td class="px-3 py-2">
-              <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusPillClass(task)">{{ statusLabel(task) }}</span>
-            </td>
-            <td class="px-3 py-2">
-              <div class="flex items-center gap-2">
-                <div class="h-1.5 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-700">
-                  <div
-                    class="h-full rounded transition-all"
-                    :class="progressClass(task)"
-                    :style="{ width: (task.status === 'running' ? Math.max(task.progress, 2) : 100) + '%' }"
-                  ></div>
+          <template v-for="task in transfers.tasks" :key="task.id">
+            <tr class="border-t border-slate-100 dark:border-slate-700">
+              <td class="px-4 py-2">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">{{ task.type === "upload" ? "⬆️" : "⬇️" }}</span>
+                  <span class="max-w-[200px] truncate font-medium">{{ task.name }}</span>
                 </div>
-                <span class="w-9 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                  {{ task.status === "running" ? Math.round(task.progress) + "%" : task.status === "error" ? "!" : "100%" }}
-                </span>
-              </div>
-              <div v-if="task.status === 'running'" class="mt-1 flex items-center justify-between gap-2 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
-                <span class="truncate">{{ formatBytes(task.bytes) }}{{ task.total ? " / " + formatBytes(task.total) : "" }}</span>
-                <span v-if="task.speed > 0" class="shrink-0 text-blue-500 dark:text-blue-400">{{ formatSpeed(task.speed) }}</span>
-              </div>
-            </td>
-            <td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ formatDate(task.time) }}</td>
-            <td class="px-3 py-2">
-              <div class="flex items-center gap-1.5">
-                <button
-                  v-if="task.status === 'done' && task.path"
-                  class="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
-                  :title="t('openAction')"
-                  @click="openPath(task.path)"
-                >{{ t("openAction") }}</button>
-                <button
-                  v-if="task.status === 'error' && task.retryable && task.profileId"
-                  class="rounded-md border border-blue-300 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
-                  :title="t('retryHint')"
-                  @click="retryTask(task)"
-                >{{ task.interrupted ? t("resume") : t("retry") }}</button>
-                <button class="rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700" :title="t('delete')" @click="removeTransfer(task.id)">✕</button>
-              </div>
-            </td>
-          </tr>
+                <div v-if="task.status === 'error' && task.error" class="mt-0.5 max-w-[300px] truncate text-xs text-red-500" :title="task.error">{{ task.error }}</div>
+              </td>
+              <td class="max-w-[240px] truncate px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{{ taskSubline(task) }}</td>
+              <td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ task.type === "upload" ? t("upload") : t("download") }}</td>
+              <td class="px-3 py-2">
+                <span class="rounded px-2 py-0.5 text-xs font-medium" :class="statusPillClass(task)">{{ statusLabel(task) }}</span>
+              </td>
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-700">
+                    <div
+                      class="h-full rounded transition-all"
+                      :class="progressClass(task)"
+                      :style="{ width: (task.status === 'running' ? Math.max(task.progress, 2) : 100) + '%' }"
+                    ></div>
+                  </div>
+                  <span class="w-9 shrink-0 text-right text-xs tabular-nums text-slate-400">
+                    {{ task.status === "running" ? Math.round(task.progress) + "%" : task.status === "error" ? "!" : "100%" }}
+                  </span>
+                </div>
+                <div v-if="task.status === 'running'" class="mt-1 flex items-center justify-between gap-2 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                  <span class="truncate">{{ formatBytes(task.bytes) }}{{ task.total ? " / " + formatBytes(task.total) : "" }}</span>
+                  <span v-if="task.speed > 0" class="shrink-0 text-blue-500 dark:text-blue-400">{{ formatSpeed(task.speed) }}</span>
+                </div>
+              </td>
+              <td class="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{{ formatDate(task.time) }}</td>
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-1.5">
+                  <button
+                    class="shrink-0 whitespace-nowrap rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                    :title="t('detail')"
+                    @click="toggleDetail(task.id)"
+                  >{{ expandedId === task.id ? t("hideDetail") : t("detail") }}</button>
+                  <button
+                    v-if="task.status === 'done' && task.path"
+                    class="shrink-0 whitespace-nowrap rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                    :title="t('openAction')"
+                    @click="openPath(task.path)"
+                  >{{ t("openAction") }}</button>
+                  <button
+                    v-if="task.status === 'error' && task.profileId && task.path && task.key"
+                    class="shrink-0 whitespace-nowrap rounded-md border border-blue-300 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30"
+                    :title="t('retryHint')"
+                    @click="retryTask(task)"
+                  >{{ task.interrupted ? t("resume") : t("retry") }}</button>
+                  <button class="shrink-0 rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700" :title="t('delete')" @click="removeTransfer(task.id)">✕</button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="expandedId === task.id" class="border-t border-slate-200 dark:border-slate-700">
+              <td colspan="7" class="px-4 py-3">
+                <div class="grid grid-cols-2 gap-x-6 gap-y-2 border-l-2 border-blue-400 pl-3 text-xs dark:border-blue-500">
+                  <div class="flex gap-2">
+                    <span class="shrink-0 text-slate-400">{{ t("colType") }}</span>
+                    <span class="font-medium">{{ task.type === "upload" ? t("upload") : t("download") }}</span>
+                  </div>
+                  <div class="flex gap-2">
+                    <span class="shrink-0 text-slate-400">{{ t("colStatus") }}</span>
+                    <span class="font-medium" :class="task.status === 'error' ? 'text-red-500' : task.status === 'done' ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'">{{ statusLabel(task) }}</span>
+                  </div>
+                  <div class="col-span-2 flex gap-2">
+                    <span class="shrink-0 text-slate-400">{{ t("s3Path") }}</span>
+                    <span class="min-w-0 break-all font-mono text-slate-700 dark:text-slate-300">{{ taskS3Path(task) }}</span>
+                  </div>
+                  <div class="col-span-2 flex gap-2">
+                    <span class="shrink-0 text-slate-400">{{ t("localPath") }}</span>
+                    <span class="min-w-0 break-all font-mono text-slate-700 dark:text-slate-300">{{ task.path || "-" }}</span>
+                  </div>
+                  <div class="col-span-2 flex gap-2">
+                    <span class="shrink-0 text-slate-400">{{ t("colDate") }}</span>
+                    <span>{{ formatDate(task.time) }}</span>
+                  </div>
+                  <div v-if="task.status === 'error' && task.error" class="col-span-2 flex gap-2">
+                    <span class="shrink-0 text-slate-400">{{ t("error") }}</span>
+                    <span class="min-w-0 break-all text-red-500">{{ task.error }}</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
     </div>

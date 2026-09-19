@@ -324,6 +324,7 @@ function onAuxClick(e: MouseEvent) {
             @edit-profile="openEdit"
             @open-new-tab="onOpenNewTab"
             @open-settings="openToolTab('settings')"
+            @open-transfers="openToolTab('transfers')"
           />
           <TransfersPanel v-else-if="tab.kind === 'transfers'" />
           <LogsPanel v-else-if="tab.kind === 'logs'" />
