@@ -167,6 +167,13 @@ async fn build_client(p: &Profile) -> Result<Client> {
     let cfg = loader.load().await;
     let mut builder = aws_sdk_s3::config::Builder::from(&cfg);
     builder = builder.force_path_style(p.path_style);
+    // The SDK enables stalled-stream protection by default (grace period 5s):
+    // an upload body that momentarily delivers 0 B/s (slow/unstable link to an
+    // S3 gateway) aborts the whole request. That kills multi-GB transfers that
+    // this app's own per-part retry/resume would otherwise recover from.
+    builder = builder.stalled_stream_protection(
+        aws_sdk_s3::config::StalledStreamProtectionConfig::disabled(),
+    );
     builder =
         builder.request_checksum_calculation(RequestChecksumCalculation::WhenRequired);
     if p.tls_skip_verify || p.has_ca_cert() {
@@ -825,6 +832,14 @@ const PART_UPLOAD_RETRIES: u32 = 3;
 const COMPLETE_RETRIES: u32 = 3;
 /// Times we restart the whole multipart upload with a fresh UploadId.
 const MAX_UPLOAD_RESTARTS: u32 = 2;
+/// Attempts for the tiny multipart probe before declaring multipart assembly
+/// broken. A single transient gateway error must not force a huge file onto
+/// the single-PUT path, which is far more likely to be killed by the gateway.
+const MULTIPART_PROBE_RETRIES: u32 = 3;
+/// Attempts for a plain single-object PUT. A single PUT is one long-lived
+/// request, so a gateway/proxy in front of S3 can abort it with a transient
+/// 499/5xx; a few retries usually land once the blip clears.
+const SINGLE_PUT_RETRIES: u32 = 4;
 
 fn file_fingerprint(local_path: &str) -> Result<(u64, u64)> {
     let meta = std::fs::metadata(local_path).map_err(|e| anyhow!("读取本地文件失败: {e}"))?;
@@ -906,6 +921,15 @@ fn is_auth_or_config_error(msg: &str) -> bool {
         || s.contains("invalidbucketname")
 }
 
+/// True for gateway/proxy-level transient errors (nginx 499 = client closed,
+/// 500/502/503/504) that a retry can overcome. Auth/config and multipart
+/// state-loss errors are handled separately.
+fn is_transient_http_error(msg: &str) -> bool {
+    ["HTTP 499", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"]
+        .iter()
+        .any(|s| msg.contains(s))
+}
+
 async fn create_upload(
     app: &AppHandle,
     client: &Client,
@@ -949,7 +973,22 @@ async fn create_upload(
 /// multipart assembly (e.g. some S3 gateways) fail here while still accepting
 /// plain PUTs, so large uploads can skip multipart and use a single PUT
 /// instead of wasting a full multipart pass.
+///
+/// The probe is retried: a transient gateway error (499/5xx) on one tiny
+/// request should not send a huge file down the single-PUT path.
 async fn multipart_completion_works(client: &Client, bucket: &str) -> bool {
+    for attempt in 0..MULTIPART_PROBE_RETRIES {
+        if multipart_probe_once(client, bucket).await {
+            return true;
+        }
+        if attempt + 1 < MULTIPART_PROBE_RETRIES {
+            tokio::time::sleep(Duration::from_millis(250 * (attempt as u64 + 1))).await;
+        }
+    }
+    false
+}
+
+async fn multipart_probe_once(client: &Client, bucket: &str) -> bool {
     let suffix = std::time::SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
@@ -1011,30 +1050,45 @@ async fn put_object_single(
     total: u64,
     task_id: &str,
 ) -> Result<()> {
-    let file = tokio::fs::File::open(local_path)
-        .await
-        .map_err(|e| anyhow!("打开本地文件失败: {e}"))?;
-    let body = ByteStream::new(SdkBody::from_body_1_x(ProgressUploadBody {
-        file,
-        total,
-        sent: 0,
-        done: false,
-        app: app.clone(),
-        task_id: task_id.to_string(),
-        base: 0.0,
-        span: 100.0,
-        total_bytes: total,
-        sent_before: 0,
-    }));
-    client
-        .put_object()
-        .bucket(bucket)
-        .key(key)
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| anyhow!("普通上传失败: {}", sdk_err(e)))?;
-    Ok(())
+    let mut last_msg = String::new();
+    for attempt in 0..SINGLE_PUT_RETRIES {
+        let file = tokio::fs::File::open(local_path)
+            .await
+            .map_err(|e| anyhow!("打开本地文件失败: {e}"))?;
+        let body = ByteStream::new(SdkBody::from_body_1_x(ProgressUploadBody {
+            file,
+            total,
+            sent: 0,
+            done: false,
+            app: app.clone(),
+            task_id: task_id.to_string(),
+            base: 0.0,
+            span: 100.0,
+            total_bytes: total,
+            sent_before: 0,
+        }));
+        match client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(body)
+            .send()
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                last_msg = sdk_err(e);
+                let last_attempt = attempt + 1 == SINGLE_PUT_RETRIES;
+                if !is_transient_http_error(&last_msg) || last_attempt {
+                    break;
+                }
+                // A gateway timeout usually clears quickly; back off before
+                // the next full-body attempt.
+                tokio::time::sleep(Duration::from_secs(1u64 << attempt)).await;
+            }
+        }
+    }
+    Err(anyhow!("普通上传失败: {last_msg}"))
 }
 
 async fn multipart_upload(

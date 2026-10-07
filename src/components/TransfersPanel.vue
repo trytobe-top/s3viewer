@@ -12,6 +12,7 @@ import type { TransferTask } from "../transfers";
 import { settings, saveSettings } from "../settings";
 import { api } from "../api";
 import { pushToast } from "../toast";
+import { logError, logSuccess } from "../logs";
 import { t } from "../i18n";
 
 async function chooseDir() {
@@ -104,8 +105,18 @@ async function retryTask(task: TransferTask) {
       await api.downloadObject(task.profileId, task.bucket, task.key, task.path, task.id);
     }
     patchTransfer(task.id, { status: "done", progress: 100 });
+    if (task.type === "upload") {
+      logSuccess("upload", t("logUploaded", { name: task.name, bucket: task.bucket, key: task.key }));
+    } else {
+      logSuccess("download", t("logDownloadedTo", { name: task.name, key: task.key, path: task.path || "" }));
+    }
   } catch (e) {
     patchTransfer(task.id, { status: "error", error: String(e) });
+    if (task.type === "upload") {
+      logError("upload", t("logUploadFailed", { name: task.name, msg: String(e) }));
+    } else {
+      logError("download", t("logDownloadFailed", { key: task.key, msg: String(e) }));
+    }
   }
 }
 </script>
