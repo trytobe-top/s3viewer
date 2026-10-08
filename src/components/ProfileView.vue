@@ -221,7 +221,42 @@ const showCreateBucket = ref(false);
 const newBucketName = ref("");
 const newBucketRegion = ref(props.profile.region);
 const busy = ref("");
+// Auto-dismiss the blocking busy toast after a short while so a slow or hung
+// transfer never leaves it stuck; real progress lives in the transfers panel.
+let busyTimer: ReturnType<typeof setTimeout> | undefined;
+watch(busy, (v) => {
+  if (busyTimer) clearTimeout(busyTimer);
+  if (v) {
+    busyTimer = setTimeout(() => {
+      busy.value = "";
+    }, 6000);
+  }
+});
 const dragOver = ref(false);
+// Right after a drop the platform may replay enter/over events; ignore them
+// for a short window and force-hide shortly after, so the overlay always
+// dismisses itself even if an unexpected event sequence re-shows it.
+let lastDropAt = 0;
+let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+function hideOverlay() {
+  dragOver.value = false;
+  if (hideTimer) {
+    clearTimeout(hideTimer);
+    hideTimer = undefined;
+  }
+}
+
+function dismissOverlay() {
+  hideOverlay();
+  // Suppress any replayed enter/over so a manual close stays closed.
+  lastDropAt = Date.now();
+}
+
+function showOverlay(x: number, y: number) {
+  if (Date.now() - lastDropAt < 1500) return;
+  dragOver.value = dropzoneHit(x, y);
+}
 const selected = ref<string[]>([]);
 const searchQuery = ref("");
 const searchResults = ref<ObjectEntry[] | null>(null);
@@ -1020,19 +1055,21 @@ onMounted(async () => {
     .onDragDropEvent((event) => {
       const e = event.payload;
       if (!props.active || !selectedBucket.value) return;
-      if (e.type === "over") {
-        dragOver.value = dropzoneHit(
-          e.position.x / window.devicePixelRatio,
-          e.position.y / window.devicePixelRatio
-        );
+      const px = e.type === "leave" ? 0 : e.position.x / window.devicePixelRatio;
+      const py = e.type === "leave" ? 0 : e.position.y / window.devicePixelRatio;
+      if (e.type === "enter") {
+        showOverlay(px, py);
+      } else if (e.type === "over") {
+        showOverlay(px, py);
       } else if (e.type === "leave") {
-        dragOver.value = false;
+        hideOverlay();
       } else if (e.type === "drop") {
-        const hit = dropzoneHit(
-          e.position.x / window.devicePixelRatio,
-          e.position.y / window.devicePixelRatio
-        );
-        dragOver.value = false;
+        const hit = dropzoneHit(px, py);
+        hideOverlay();
+        lastDropAt = Date.now();
+        // Safety net: if the platform replays any event after the drop,
+        // force the overlay away shortly after regardless.
+        hideTimer = setTimeout(hideOverlay, 2000);
         if (hit && e.paths.length) {
           uploadFiles(e.paths);
         }
@@ -1059,6 +1096,8 @@ onBeforeUnmount(() => {
   offBack?.();
   offForward?.();
   unlistenDrag?.();
+  if (hideTimer) clearTimeout(hideTimer);
+  if (busyTimer) clearTimeout(busyTimer);
 });
 </script>
 
@@ -1094,7 +1133,16 @@ onBeforeUnmount(() => {
       <div
         v-if="dragOver"
         class="pointer-events-none absolute inset-0 z-20 m-3 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-500 bg-blue-50/80 text-sm font-medium text-blue-600 dark:border-blue-400 dark:bg-blue-900/40 dark:text-blue-300"
-      >{{ t("dropHint") }}</div>
+      >
+        <span class="flex items-center gap-2">
+          {{ t("dropHint") }}
+          <button
+            class="pointer-events-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs leading-none text-white hover:bg-blue-700"
+            title="Close"
+            @click="dismissOverlay()"
+          >✕</button>
+        </span>
+      </div>
       <div v-if="selectedBucket" class="border-b border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
         <div class="mb-2 flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-600 dark:bg-slate-900">
           <span class="text-slate-400">🔗</span>
@@ -1334,7 +1382,14 @@ onBeforeUnmount(() => {
     </section>
 
     <div v-if="busy" class="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-black/10">
-      <div class="rounded-lg bg-white px-5 py-3 text-sm shadow-lg dark:bg-slate-800 dark:text-slate-100">{{ busy }}</div>
+      <div class="relative rounded-lg bg-white px-5 py-3 text-sm shadow-lg dark:bg-slate-800 dark:text-slate-100">
+        {{ busy }}
+        <button
+          class="pointer-events-auto absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-500 text-xs leading-none text-white hover:bg-slate-600"
+          title="Close"
+          @click="busy = ''"
+        >✕</button>
+      </div>
     </div>
 
     <p v-if="error" class="fixed bottom-2 left-1/2 z-50 max-w-xl -translate-x-1/2 rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg">{{ error }}</p>

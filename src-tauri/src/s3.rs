@@ -922,10 +922,13 @@ fn is_auth_or_config_error(msg: &str) -> bool {
 }
 
 /// True for gateway/proxy-level transient errors (nginx 499 = client closed,
-/// 500/502/503/504) that a retry can overcome. Auth/config and multipart
-/// state-loss errors are handled separately.
+/// 502/503/504) that a retry can overcome. Auth/config and multipart
+/// state-loss errors are handled separately. HTTP 500 is intentionally not
+/// listed: it usually reflects a real backend fault, and on the single-PUT
+/// fallback a retry would re-stream the whole file for a likely-persistent
+/// error.
 fn is_transient_http_error(msg: &str) -> bool {
-    ["HTTP 499", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"]
+    ["HTTP 499", "HTTP 502", "HTTP 503", "HTTP 504"]
         .iter()
         .any(|s| msg.contains(s))
 }

@@ -1,7 +1,14 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::Manager;
+
+/// Guards every read-modify-write cycle on `resume.json`. Multipart uploads to
+/// different targets can run concurrently; without this lock two `set_upload`
+/// calls could both read the same registry and the last writer would silently
+/// drop the other target's resume entry.
+static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
 /// Persisted state for an in-progress S3 multipart upload, keyed by the
 /// local file so an interrupted upload can be resumed later.
@@ -46,9 +53,29 @@ fn save(app: &tauri::AppHandle, reg: &Registry) {
     let Ok(path) = registry_path(app) else {
         return;
     };
-    if let Ok(bytes) = serde_json::to_vec(reg) {
-        let _ = std::fs::write(path, bytes);
+    let Ok(bytes) = serde_json::to_vec(reg) else {
+        return;
+    };
+    // Write to a temp file and rename so a crash mid-write never corrupts the
+    // resume state (rename replaces the destination atomically on Windows).
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, bytes).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
+}
+
+/// Load the registry, run `f` on it, and persist the result. Every read and
+/// mutation of `resume.json` goes through here so concurrent uploads never
+/// lose each other's entries or see a half-written file.
+fn with_registry<T>(app: &tauri::AppHandle, f: impl FnOnce(&mut Registry) -> T) -> T {
+    let _guard = match REGISTRY_LOCK.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    };
+    let mut reg = load(app);
+    let out = f(&mut reg);
+    save(app, &reg);
+    out
 }
 
 pub fn find_upload(
@@ -60,13 +87,15 @@ pub fn find_upload(
     size: u64,
     mtime: u64,
 ) -> Option<UploadResume> {
-    load(app).uploads.into_iter().find(|u| {
-        u.profile_id == profile_id
-            && u.bucket == bucket
-            && u.key == key
-            && u.local_path == local_path
-            && u.size == size
-            && u.mtime == mtime
+    with_registry(app, |reg| {
+        reg.uploads.iter().find(|u| {
+            u.profile_id == profile_id
+                && u.bucket == bucket
+                && u.key == key
+                && u.local_path == local_path
+                && u.size == size
+                && u.mtime == mtime
+        }).cloned()
     })
 }
 
@@ -79,24 +108,26 @@ pub fn find_upload_by_target(
     key: &str,
     local_path: &str,
 ) -> Option<UploadResume> {
-    load(app).uploads.into_iter().find(|u| {
-        u.profile_id == profile_id
-            && u.bucket == bucket
-            && u.key == key
-            && u.local_path == local_path
+    with_registry(app, |reg| {
+        reg.uploads.iter().find(|u| {
+            u.profile_id == profile_id
+                && u.bucket == bucket
+                && u.key == key
+                && u.local_path == local_path
+        }).cloned()
     })
 }
 
 pub fn set_upload(app: &tauri::AppHandle, resume: &UploadResume) {
-    let mut reg = load(app);
-    reg.uploads.retain(|u| {
-        !(u.profile_id == resume.profile_id
-            && u.bucket == resume.bucket
-            && u.key == resume.key
-            && u.local_path == resume.local_path)
+    with_registry(app, |reg| {
+        reg.uploads.retain(|u| {
+            !(u.profile_id == resume.profile_id
+                && u.bucket == resume.bucket
+                && u.key == resume.key
+                && u.local_path == resume.local_path)
+        });
+        reg.uploads.push(resume.clone());
     });
-    reg.uploads.push(resume.clone());
-    save(app, &reg);
 }
 
 pub fn clear_upload(
@@ -106,12 +137,12 @@ pub fn clear_upload(
     key: &str,
     local_path: &str,
 ) {
-    let mut reg = load(app);
-    reg.uploads.retain(|u| {
-        !(u.profile_id == profile_id
-            && u.bucket == bucket
-            && u.key == key
-            && u.local_path == local_path)
+    with_registry(app, |reg| {
+        reg.uploads.retain(|u| {
+            !(u.profile_id == profile_id
+                && u.bucket == bucket
+                && u.key == key
+                && u.local_path == local_path)
+        });
     });
-    save(app, &reg);
 }

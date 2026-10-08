@@ -198,9 +198,21 @@ function saveTransfers() {
   }
 }
 
+// Coalesce the deep watcher's frequent mutations (progress ticks, speed
+// updates) into a single localStorage write instead of serializing the whole
+// task list on every change.
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = undefined;
+    saveTransfers();
+  }, 500);
+}
+
 loadTransfers();
 watch(
   () => transfers.tasks,
-  () => saveTransfers(),
+  () => scheduleSave(),
   { deep: true }
 );
