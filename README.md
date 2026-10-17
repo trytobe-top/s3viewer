@@ -8,6 +8,14 @@ Works with AWS S3, MinIO, Tencent COS, Alibaba OSS (S3-compatible mode), Cloudfl
 
 ![Home](screenshots/entry.png)
 
+## Download
+
+Get the latest release for your platform from [GitHub Releases](https://github.com/trytobe-top/s3viewer/releases/latest):
+
+- **Windows** — NSIS installer (`.exe`): [⬇️ Download for Windows](https://github.com/trytobe-top/s3viewer/releases/latest)
+- **macOS** — `.dmg` (Apple Silicon / Intel): [⬇️ Download for macOS](https://github.com/trytobe-top/s3viewer/releases/latest)
+- **Linux** — `.AppImage` / `.deb` (x86_64): [⬇️ Download for Linux](https://github.com/trytobe-top/s3viewer/releases/latest)
+
 ## Features
 
 - **Multi-connection management** — add / edit / delete any number of S3-compatible connections with custom endpoint, region, path-style addressing and TLS options

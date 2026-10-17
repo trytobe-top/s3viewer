@@ -394,7 +394,7 @@ const dataUrl = computed(() => {
 
 const textContent = computed(() => {
   if (!preview.value) return "";
-  return decodeURIComponent(escape(atob(preview.value.content_base64)));
+  return new TextDecoder("utf-8").decode(base64ToArrayBuffer(preview.value.content_base64));
 });
 
 async function load(force = false) {

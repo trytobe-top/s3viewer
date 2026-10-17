@@ -7,7 +7,7 @@ import { t } from "./i18n";
 import { emitBack, emitForward } from "./navbus";
 import { patchTransferProgress, runningTransferCount } from "./transfers";
 import { openDevTools } from "./devtools";
-import { settings } from "./settings";
+import { settings, isFavorite, toggleFavorite, recordRecent, clearRecent } from "./settings";
 import { refreshPlugins } from "./plugins";
 import type { Profile } from "./types";
 import ProfileView from "./components/ProfileView.vue";
@@ -47,6 +47,18 @@ const activeProfile = computed(() => {
 
 const runningCount = computed(() => runningTransferCount());
 
+const favOpen = ref(true);
+const recentOpen = ref(true);
+const allOpen = ref(true);
+const recentList = computed(() =>
+  settings.recentProfileIds
+    .map((id) => profiles.value.find((p) => p.id === id))
+    .filter((p): p is Profile => !!p)
+);
+const favoriteList = computed(() =>
+  profiles.value.filter((p) => isFavorite(p.id))
+);
+
 async function loadProfiles() {
   try {
     profiles.value = await api.listProfiles();
@@ -67,6 +79,7 @@ function openToolTab(kind: ToolKind) {
 }
 
 function openTab(profile: Profile, forceNew = false) {
+  recordRecent(profile.id);
   if (!forceNew) {
     const existing = tabs.value.find(
       (tab) => tab.kind === "profile" && tab.profile.id === profile.id
@@ -86,6 +99,7 @@ function onOpenNewTab(payload: {
   bucket: string | null;
   prefix: string;
 }) {
+  recordRecent(payload.profile.id);
   const tab: Tab = {
     kind: "profile",
     key: newTabKey(),
@@ -336,15 +350,54 @@ function onAuxClick(e: MouseEvent) {
         <div class="text-5xl">🗄️</div>
         <div class="text-lg">{{ t("noOpenTab") }}</div>
         <p class="text-sm">{{ t("emptyHint") }}</p>
-        <div v-if="profiles.length" class="mt-4 w-72 space-y-2">
-          <div
-            v-for="p in profiles"
-            :key="p.id"
-            class="flex cursor-pointer items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-500 dark:hover:bg-slate-700"
-            @click="openTab(p)"
-          >
-            <span class="font-medium">{{ p.name }}</span>
-            <span class="text-xs text-slate-400">{{ t("openHint") }}</span>
+        <div v-if="profiles.length" class="mt-4 flex w-96 flex-col gap-2">
+          <div v-if="recentList.length" class="rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+            <div class="flex items-center justify-between border-b border-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              <button class="flex flex-1 items-center gap-1.5" @click="recentOpen = !recentOpen">
+                <span>{{ recentOpen ? "▾" : "▸" }}</span> 🕐 {{ t("recentConnections") }}
+                <span class="font-normal text-slate-400">({{ recentList.length }})</span>
+              </button>
+              <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" :title="t('clearRecent')" @click="clearRecent">✕</button>
+            </div>
+            <div v-if="recentOpen" class="divide-y divide-slate-100 dark:divide-slate-700">
+              <div v-for="p in recentList" :key="p.id" class="group flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 dark:text-slate-200 dark:hover:bg-slate-700" @click="openTab(p)">
+                <span class="truncate font-medium">{{ p.name }}</span>
+                <span class="text-xs text-slate-400">{{ t("openHint") }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="favoriteList.length" class="rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+            <button class="flex w-full items-center gap-1.5 border-b border-slate-100 px-3 py-1.5 text-left text-xs font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400" @click="favOpen = !favOpen">
+              <span>{{ favOpen ? "▾" : "▸" }}</span> ⭐ {{ t("favoriteConnections") }}
+              <span class="font-normal text-slate-400">({{ favoriteList.length }})</span>
+            </button>
+            <div v-if="favOpen" class="divide-y divide-slate-100 dark:divide-slate-700">
+              <div v-for="p in favoriteList" :key="p.id" class="group flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 dark:text-slate-200 dark:hover:bg-slate-700" @click="openTab(p)">
+                <span class="truncate font-medium">{{ p.name }}</span>
+                <span class="text-xs text-slate-400">{{ t("openHint") }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+            <button class="flex w-full items-center gap-1.5 border-b border-slate-100 px-3 py-1.5 text-left text-xs font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400" @click="allOpen = !allOpen">
+              <span>{{ allOpen ? "▾" : "▸" }}</span> {{ t("allConnections") }}
+              <span class="font-normal text-slate-400">({{ profiles.length }})</span>
+            </button>
+            <div v-if="allOpen" class="max-h-64 divide-y divide-slate-100 overflow-auto dark:divide-slate-700">
+              <div v-for="p in profiles" :key="p.id" class="group flex cursor-pointer items-center justify-between px-3 py-2 text-sm text-slate-700 hover:bg-blue-50 dark:text-slate-200 dark:hover:bg-slate-700" @click="openTab(p)">
+                <span class="truncate font-medium">{{ p.name }}</span>
+                <span class="flex items-center gap-2">
+                  <span class="text-xs text-slate-400">{{ t("openHint") }}</span>
+                  <button
+                    class="text-slate-300 hover:text-amber-400 dark:text-slate-500"
+                    :title="isFavorite(p.id) ? t('unfavorite') : t('favorite')"
+                    @click.stop="toggleFavorite(p.id)"
+                  >{{ isFavorite(p.id) ? "★" : "☆" }}</button>
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

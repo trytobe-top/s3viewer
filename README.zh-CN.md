@@ -8,6 +8,14 @@
 
 ![首页](screenshots/entry.png)
 
+## 下载
+
+从 [GitHub Releases](https://github.com/trytobe-top/s3viewer/releases/latest) 获取对应平台的安装包：
+
+- **Windows** — NSIS 安装程序（`.exe`）：[⬇️ 下载 Windows 版](https://github.com/trytobe-top/s3viewer/releases/latest)
+- **macOS** — `.dmg`（Apple Silicon / Intel）：[⬇️ 下载 macOS 版](https://github.com/trytobe-top/s3viewer/releases/latest)
+- **Linux** — `.AppImage` / `.deb`（x86_64）：[⬇️ 下载 Linux 版](https://github.com/trytobe-top/s3viewer/releases/latest)
+
 ## 功能特性
 
 - **多连接管理** — 支持添加 / 编辑 / 删除任意多个 S3 兼容连接，可自定义 Endpoint、Region、Path-style 寻址与 TLS 选项

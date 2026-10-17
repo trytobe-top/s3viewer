@@ -16,6 +16,8 @@ function load(): {
   showLogCountBadge: boolean;
   loadMoreLimit: number;
   enabledPlugins: string[];
+  favoriteProfileIds: string[];
+  recentProfileIds: string[];
 } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -32,6 +34,8 @@ function load(): {
         showLogCountBadge: p.showLogCountBadge === true,
         loadMoreLimit: num(p.loadMoreLimit, 1000),
         enabledPlugins: strArray(p.enabledPlugins),
+        favoriteProfileIds: strArray(p.favoriteProfileIds),
+        recentProfileIds: strArray(p.recentProfileIds),
       };
     }
   } catch {
@@ -48,6 +52,8 @@ function load(): {
     showLogCountBadge: false,
     loadMoreLimit: 1000,
     enabledPlugins: [],
+    favoriteProfileIds: [],
+    recentProfileIds: [],
   };
 }
 
@@ -70,6 +76,8 @@ export const settings = reactive<{
   showLogCountBadge: boolean;
   loadMoreLimit: number;
   enabledPlugins: string[];
+  favoriteProfileIds: string[];
+  recentProfileIds: string[];
 }>(load());
 
 export function applyTheme(theme: Theme) {
@@ -91,6 +99,8 @@ export function saveSettings() {
         showLogCountBadge: settings.showLogCountBadge,
         loadMoreLimit: settings.loadMoreLimit,
         enabledPlugins: settings.enabledPlugins,
+        favoriteProfileIds: settings.favoriteProfileIds,
+        recentProfileIds: settings.recentProfileIds,
       })
     );
   } catch {
@@ -102,4 +112,34 @@ export function saveSettings() {
 export function initSettings() {
   applyTheme(settings.theme);
   document.documentElement.lang = settings.locale;
+}
+
+const RECENT_LIMIT = 8;
+
+export function isFavorite(id: string): boolean {
+  return settings.favoriteProfileIds.includes(id);
+}
+
+export function toggleFavorite(id: string) {
+  const set = new Set(settings.favoriteProfileIds);
+  if (set.has(id)) {
+    set.delete(id);
+  } else {
+    set.add(id);
+  }
+  settings.favoriteProfileIds = [...set];
+  saveSettings();
+}
+
+export function recordRecent(id: string) {
+  settings.recentProfileIds = [
+    id,
+    ...settings.recentProfileIds.filter((x) => x !== id),
+  ].slice(0, RECENT_LIMIT);
+  saveSettings();
+}
+
+export function clearRecent() {
+  settings.recentProfileIds = [];
+  saveSettings();
 }

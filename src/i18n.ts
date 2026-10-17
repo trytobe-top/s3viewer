@@ -15,6 +15,12 @@ const en: Dict = {
   noOpenTab: "No S3 connection open yet",
   emptyHint: "Click \"+ New Connection\" in the top-right to add an S3 / MinIO object storage backend",
   openHint: "Open →",
+  recentConnections: "Recent",
+  favoriteConnections: "Favorites",
+  allConnections: "All connections",
+  favorite: "Add to favorites",
+  unfavorite: "Remove from favorites",
+  clearRecent: "Clear recent list",
   settings: "Settings",
 
   // log drawer
@@ -309,6 +315,12 @@ const zh: Dict = {
   noOpenTab: "尚未打开任何 S3 连接",
   emptyHint: "点击右上角「+ 新建连接」添加一个 S3 / MinIO 等对象存储后端",
   openHint: "打开 →",
+  recentConnections: "最近使用",
+  favoriteConnections: "收藏",
+  allConnections: "全部连接",
+  favorite: "加入收藏",
+  unfavorite: "取消收藏",
+  clearRecent: "清空最近使用",
   settings: "设置",
 
   logTitle: "操作日志",

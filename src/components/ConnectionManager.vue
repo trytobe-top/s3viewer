@@ -4,6 +4,7 @@ import { api } from "../api";
 import { logSuccess, logError } from "../logs";
 import { t } from "../i18n";
 import { askConfirm } from "../confirm";
+import { isFavorite, toggleFavorite } from "../settings";
 import type { Profile } from "../types";
 
 const props = defineProps<{
@@ -83,7 +84,16 @@ async function remove(p: Profile) {
               <td colspan="5" class="px-5 py-10 text-center text-slate-400">{{ t("noConnections") }}</td>
             </tr>
             <tr v-for="p in profiles" :key="p.id" class="border-t border-slate-100 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-700/50">
-              <td class="px-5 py-2.5 font-medium text-slate-800 dark:text-slate-100">{{ p.name }}</td>
+              <td class="px-5 py-2.5 font-medium text-slate-800 dark:text-slate-100">
+                <span class="flex items-center gap-1.5">
+                  <button
+                    class="text-slate-300 hover:text-amber-400 dark:text-slate-500"
+                    :title="isFavorite(p.id) ? t('unfavorite') : t('favorite')"
+                    @click.stop="toggleFavorite(p.id)"
+                  >{{ isFavorite(p.id) ? "★" : "☆" }}</button>
+                  <span class="truncate">{{ p.name }}</span>
+                </span>
+              </td>
               <td class="max-w-40 truncate px-3 py-2.5 text-slate-500">{{ p.endpoint || "AWS" }}</td>
               <td class="px-3 py-2.5 text-slate-500">{{ p.region }}</td>
               <td class="px-3 py-2.5">

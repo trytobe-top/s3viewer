@@ -18,6 +18,7 @@
     erl: 1, coffee: 1, diff: 1, patch: 1, graphql: 1, proto: 1, r: 1,
     swift: 1, scala: 1, dart: 1, php: 1, dockerfile: 1, nginx: 1,
     ipynb: 1, ex: 1, exs: 1, vim: 1, lock: 1,
+    nc: 1, gcode: 1, tap: 1,
   };
 
   var LANG = {
